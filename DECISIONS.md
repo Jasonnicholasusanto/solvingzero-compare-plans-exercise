@@ -198,11 +198,13 @@ I broke down the development process into several key decisions and steps, which
 - **What I would do next**: the two cheapest results are the same product with and without controlled load, at the same price. This household has no controlled-load register, so the variant is noise in the list; dropping controlled-load plans when the household has no such usage would tidy it.
 ---
 
-## Frontend Development
+# Frontend Development
 
 The engine answers the question; the UI has to make someone act on it. This section covers the tooling decisions taken to get there, and the judgement calls inside the interface itself.
 
-### Restructuring into a monorepo
+**The web application is now live at [https://solvingzero-coding-exercise.vercel.app/](https://solvingzero-coding-exercise.vercel.app/) deployed through Vercel from main branch.**
+
+## Restructuring into a monorepo
 
 The exercise ships as a flat library — `src/`, `scripts/`, `user_data/` at the root. Adding a web app to that root would have meant one `package.json` carrying both `vitest` and `next`, and one `tsconfig.json` trying to serve Node ESM and a JSX bundler at once. Those two things want genuinely different compiler settings, so I split them:
 
@@ -219,7 +221,7 @@ The engine moved wholesale into `packages/core` — source, scripts, tests, and 
 
 **Why the engine is compiled rather than consumed as source.** Turborepo's docs favour "just-in-time" packages that export raw TypeScript, and it is less setup. I built `packages/core` to `dist/` instead, because the engine's imports carry explicit `.js` extensions (Node ESM style) and relying on a bundler to resolve those back to `.ts` is a subtle failure mode I did not want between me and the UI. Compiling also forces the package to declare a real public surface, which is `src/index.ts` — the web app can import `recommendPlan` and cannot reach into `src/utils/helpers.ts`.
 
-### npm → pnpm
+## npm → pnpm
 
 The repo started on npm and I moved it to pnpm once the second package existed.
 
@@ -229,7 +231,7 @@ The repo started on npm and I moved it to pnpm once the second package existed.
 
 **The cost, honestly**: a reviewer now needs pnpm rather than the npm they already have, and `packageManager` in the root `package.json` pins the version. For a take-home that is a small extra hurdle, and I judged the workspace ergonomics worth it. `corepack enable` is enough to get it.
 
-### Next.js and shadcn/ui
+## Next.js and shadcn/ui
 
 **Next.js** because the goal guide names it, and because the App Router lets the engine run where it already works. `recommendPlan` reads fixtures off disk and calls ten CDR endpoints — that is server work, and a server component calls it directly with no API route in between. The one configuration this needs is `serverExternalPackages: ["@solvingzero/core"]`: bundling the package would rewrite `import.meta.url` and break the on-disk paths its loaders depend on.
 
@@ -237,7 +239,7 @@ The repo started on npm and I moved it to pnpm once the second package existed.
 
 **The costing is slow and that shaped the page.** A cold run is ~25 seconds — 223 plan details across ten retailers. Options were to fetch on every request (unusable), fetch at build time only (stale), or cache. The route uses `export const revalidate = 3600`: rendered once, refreshed hourly in the background, instant for the visitor. Retailers republish pricing far less often than hourly, so the staleness is theoretical. **The trade-off is that `pnpm build` now needs network access and takes ~25 seconds longer**, because the page is prerendered. A `<Suspense>` boundary around the data-dependent subtree keeps the shell instant when the page does render on demand.
 
-### Interface decisions
+## Interface decisions
 
 - **The saving leads.** The primary insight is one number — *"Save $205 a year"* — at the top left, with the working beside it. Everything below exists to justify that number rather than compete with it.
 - **Charts start at zero.** The bar chart comparing today against the best plan, and the ranked bars in the alternatives list, both scale from zero. A truncated axis would turn a 14% difference into a visual chasm; on a page whose job is telling someone how much they would save, that is the line between informing and overselling.
@@ -245,7 +247,7 @@ The repo started on npm and I moved it to pnpm once the second package existed.
 - **The method is on the page, not in this document.** A "How we cost a plan" card carries the formula and the seven steps as a carousel. A saving figure the household cannot interrogate is one they will not act on.
 - **Brand colours were taken from the source, and corrected.** solvingzero.com publishes its palette as `--chakra-colors-landing-*` tokens; I converted them to oklch rather than eyeballing screenshots. Their signature green `#40ab6d` fails WCAG AA as text (2.89:1), so green *type* uses their own darker `#1f7a44` (5.35:1) while fills keep the brighter green with ink text on top.
 
-### What I would do next
+## What I would do next
 
 - **`RankedPlanCost.breakdown` is declared but never populated**, so the comparison chart can only plot totals. Threading the per-component figures the engine already computes in `ObservedPlanCost` through `estimatePlanCosts` would allow a stacked usage/supply/solar comparison.
 - **The materiality threshold is duplicated.** `recommendPlan` takes `materialSavingAud` (default 30) as an input but does not publish it on the result, so the UI restates the constant. Exposing it on `PlanRecommendation` would remove the drift risk.
@@ -254,7 +256,7 @@ The repo started on npm and I moved it to pnpm once the second package existed.
 
 ---
 
-## Testing
+# Testing
 
 `pnpm test` — **127 tests across 5 files, all passing.** `pnpm typecheck` is clean.
 
@@ -266,7 +268,7 @@ The repo started on npm and I moved it to pnpm once the second package existed.
 | `src/calculateCurrentEnergyCosts.test.ts` | 40 | Plan selection, the snake_case adapter, spend figures, and reconciliation against the real invoices. |
 | `src/recommendPlan.test.ts` | 15 | Saving arithmetic, ranking, materiality, and the real household against all 249 snapshot plans. |
 
-### How I approached testing
+## How I approached testing
 
 **I separated the pure logic from the I/O so the risky parts need no mocking.** `isPlanApplicable`, `priceTieredUsage` and `toCdrTime` are pure functions tested directly against hand-built inputs. Only `fetchPlans` needs a stub, and that stubs `globalThis.fetch` with a small fake CDR server rather than mocking a library — so the tests assert on real `Response` objects, real status codes and the real `x-v` headers.
 
@@ -276,7 +278,7 @@ The repo started on npm and I moved it to pnpm once the second package existed.
 
 **I mutation-checked the tests that matter.** After writing the `fetchPlans` suite I deliberately broke the source four ways — removed the de-duplication `Set`, sent the wrong `x-v` version, ignored `meta.totalPages`, and re-threw instead of skipping a failed plan — and confirmed each one failed exactly the test aimed at it, then restored the file. I did the same when extending the demand-charge guard. A stub-driven suite can pass for the wrong reasons, and this is the cheapest way to find out that it does.
 
-### Two tests doing unusual work
+## Two tests doing unusual work
 
 **Reconciliation against the real invoices.** `bills.json` breaks down into the same four components I compute, so I cost the usage over exactly the window the retailer billed and compare line by line:
 
@@ -292,7 +294,7 @@ Supply and feed-in match to the cent. Peak and off-peak each differ by a few per
 
 **Tests against the 249-plan recorded snapshot.** The synthetic fixtures pin the rules; the snapshot pins them against shapes real retailers actually publish. This is what caught the demand-charge bug: my first guard checked `electricityContract.demandCharges`, which no real plan populates, while all 19 plans that carry a demand charge express it as a `tariffPeriod` with `rateBlockUType: "demandCharges"`. A purely synthetic suite would still be passing and the ranking would still be wrong at the top.
 
-### What is not covered
+## What is not covered
 
 - **No live network test.** `fetchPlans` is tested against a stub; nothing exercises the real retailer endpoints in CI. That is deliberate — the tests stay fast and offline — but it means a change to a retailer's response shape would not be caught here.
 - **No test for the request timeout and retry**, because neither is implemented yet (see the known gaps under Development 1).
@@ -300,9 +302,9 @@ Supply and feed-in match to the cent. Peak and off-peak each differ by a few per
 - **Public holidays** are billed at ordinary rates; there is no holiday calendar to test against.
 
 ---
+---
 
 ## Scripts — how to run this yourself
-
 Everything is runnable from the repo root. **Start with `scripts/test-recommend-plan.mts`** — it is the headline answer, and the other scripts are the pieces underneath it.
 
 | Command | Network | What it shows |
