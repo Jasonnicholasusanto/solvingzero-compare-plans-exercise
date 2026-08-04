@@ -27,6 +27,29 @@ type UsageRecords = ReturnType<typeof getNormalImportRecords>;
 export interface PlanCostResult {
   annualCostAud: number | null;
   notes: string[];
+  /**
+   * What the plan would have cost over the usage actually observed, before it was
+   * scaled to a year. Absent when the plan could not be costed.
+   */
+  observed?: ObservedPlanCost;
+}
+
+/**
+ * Costs over the observed usage window, unrounded.
+ *
+ * `usageCost`, `supplyCost` and `controlledLoadCost` are GST-INCLUSIVE, so they match
+ * what a bill shows. `solarCredit` is not GST-bearing and is a positive number to be
+ * subtracted.
+ */
+export interface ObservedPlanCost {
+  days: number;
+  costAud: number;
+  usageCost: number;
+  supplyCost: number;
+  controlledLoadCost: number;
+  solarCredit: number;
+  /** GST-inclusive usage cost keyed by band type. Empty for a non-time-of-use plan. */
+  usageCostByBandType: Record<string, number>;
 }
 
 /** A plan that could not be costed, and the reason to surface with it. */
@@ -39,6 +62,13 @@ type TimeOfUseBands = NonNullable<
   CdrTariffPeriod["timeOfUseRates"]
 >;
 
+/** A time-of-use costing, split by band so a caller can show peak vs off-peak. */
+interface TimeOfUseCost {
+  totalCost: number;
+  /** GST-exclusive cost keyed by band type — PEAK, OFF_PEAK, SHOULDER. */
+  byBandType: Record<string, number>;
+}
+
 /**
  * Tiered `volume` ceilings reset per period. CDR carries that period on the rate
  * itself, but no plan in the recorded snapshot publishes one, so a daily reset is
@@ -46,13 +76,17 @@ type TimeOfUseBands = NonNullable<
  * 15 kWh on a flat rate, or 50 kWh inside a three-hour window, are daily household
  * allowances, not monthly ones.
  */
-function kwhByDate(records: UsageRecords): Map<string, number> {
+function kwhByDate(
+  records: UsageRecords,
+  /** 1 reads an import register; -1 reads the export register, whose values are negative. */
+  direction: 1 | -1 = 1,
+): Map<string, number> {
   const totals = new Map<string, number>();
 
   for (const record of records) {
     const kwh = record.interval_read.interval_reads.reduce(
-      // Negative readings on an import register are ignored defensively.
-      (total, value) => total + Math.max(0, value),
+      // Readings against the flow being measured are ignored defensively.
+      (total, value) => total + Math.max(0, direction * value),
       0,
     );
 
@@ -211,7 +245,7 @@ function findTimeOfUseBandIndex(
 function costTimeOfUseRecords(
   bands: TimeOfUseBands,
   records: UsageRecords,
-): number | null {
+): TimeOfUseCost | null {
   if (bands.length === 0) {
     return null;
   }
@@ -272,23 +306,27 @@ function costTimeOfUseRecords(
   }
 
   let totalCost = 0;
+  const byBandType: Record<string, number> = {};
 
   for (const day of buckets.values()) {
     for (const [bandIndex, kwh] of day) {
-      const cost = priceTieredUsage(
-        bands[bandIndex]?.rates,
-        kwh,
-      );
+      const band = bands[bandIndex];
+
+      const cost = priceTieredUsage(band?.rates, kwh);
 
       if (cost === null) {
         return null;
       }
 
       totalCost += cost;
+
+      // Bands sharing a type (a plan may publish several SHOULDER bands) are summed.
+      const type = band?.type ?? "UNKNOWN";
+      byBandType[type] = (byBandType[type] ?? 0) + cost;
     }
   }
 
-  return totalCost;
+  return { totalCost, byBandType };
 }
 
 /**
@@ -303,7 +341,7 @@ function costTimeOfUseRecords(
 function calculateTimeOfUseUsageCost(
   plan: EnergyPlanDetail,
   usage: RawConsumption,
-): number | null {
+): TimeOfUseCost | null {
   return costTimeOfUseRecords(
     plan.electricityContract?.tariffPeriod?.[0]
       ?.timeOfUseRates ?? [],
@@ -338,29 +376,55 @@ function calculateSingleRateUsageCost(plan: EnergyPlanDetail, usage: RawConsumpt
 
 /**
  * This function calculates the solar feed-in credit (export kWh) for a given energy plan based on the household's electricity usage.
- * 
- * Formula: Solar feed-in credit = Total exported kWh × feed-in tariff
- * 
+ *
+ * Formula: Solar feed-in credit = Σ each day's exported kWh priced through the feed-in rate block
+ *
+ * A feed-in tariff can be tiered exactly like a usage rate — "Solar Max" credits the
+ * first 10 kWh exported each day at 8c and everything above at 1.5c. Crediting every
+ * kWh at the headline rate overstates the credit for a household that exports more
+ * than the allowance, which is precisely the household most drawn to such a plan.
+ *
  * @param plan The energy plan to calculate the usage cost for.
  * @param usage The household's electricity usage data. In this case, export B1 channel.
- * @returns The estimated solar feed-in credit.
+ * @returns The credit, or null when a published feed-in tariff cannot be priced.
  */
-function calculateSolarCredit(plan: EnergyPlanDetail, usage: RawConsumption): number {
+function calculateSolarCredit(plan: EnergyPlanDetail, usage: RawConsumption): number | null {
+  // Nothing exported means no credit, whatever the plan publishes.
+  if (calculateExportedKwh(usage) === 0) {
+    return 0;
+  }
+
   const solarFeedInTariff = plan.electricityContract?.solarFeedInTariff?.[0];
 
-  if (!solarFeedInTariff || !solarFeedInTariff.singleTariff) {
-    return 0; // No solar feed-in tariff defined
+  if (!solarFeedInTariff) {
+    return 0; // Plan publishes no feed-in tariff at all.
   }
 
-  const feedInRate = parsePrice(solarFeedInTariff.singleTariff.rates?.[0]?.unitPrice);
+  /*
+   * `timeVaryingTariffs` credits export at different rates by time of day.
+   * Falling back to zero would bury an otherwise competitive plan for a
+   * household that exports heavily, so it is reported as uncostable instead.
+   */
+  const rates = solarFeedInTariff.singleTariff?.rates;
 
-  if (feedInRate === null) {
-    return 0; // Invalid feed-in rate
+  if (!rates || rates.length === 0) {
+    return null;
   }
 
-  const totalExportKWh = calculateExportedKwh(usage);
+  let credit = 0;
 
-  return totalExportKWh * feedInRate;
+  // Tiered feed-in ceilings reset daily — the snapshot's tiered blocks say `period: "day"`.
+  for (const kwh of kwhByDate(getExportRecords(usage), -1).values()) {
+    const dayCredit = priceTieredUsage(rates, kwh);
+
+    if (dayCredit === null) {
+      return null;
+    }
+
+    credit += dayCredit;
+  }
+
+  return credit;
 }
 
 /**
@@ -391,9 +455,10 @@ function calculateControlledLoadTimeOfUseCost(
   tariff: CdrControlledLoad,
   records: ReturnType<typeof getControlledLoadRecords>,
 ): number | null {
-  return costTimeOfUseRecords(
-    tariff.timeOfUseRates ?? [],
-    records,
+  // Controlled load is a single circuit, so its band split is not surfaced.
+  return (
+    costTimeOfUseRecords(tariff.timeOfUseRates ?? [], records)
+      ?.totalCost ?? null
   );
 }
 
@@ -520,6 +585,7 @@ export function calculateAnnualPlanCost(plan: EnergyPlanDetail, usage: RawConsum
   // Now we need to calculate the usage cost based on the tariff type: Single Rate or Time of Use.
 
   let usageCostBeforeGst: number | null;
+  let usageByBandType: Record<string, number> = {};
 
   switch (tariffPeriod.rateBlockUType) {
     case "singleRate":
@@ -529,12 +595,16 @@ export function calculateAnnualPlanCost(plan: EnergyPlanDetail, usage: RawConsum
       );
       break;
 
-    case "timeOfUseRates":
-      usageCostBeforeGst = calculateTimeOfUseUsageCost(
+    case "timeOfUseRates": {
+      const timeOfUse = calculateTimeOfUseUsageCost(
         plan,
         usage,
       );
+
+      usageCostBeforeGst = timeOfUse?.totalCost ?? null;
+      usageByBandType = timeOfUse?.byBandType ?? {};
       break;
+    }
 
     default:
       return uncostable(
@@ -565,6 +635,12 @@ export function calculateAnnualPlanCost(plan: EnergyPlanDetail, usage: RawConsum
 
   const solarCredit = calculateSolarCredit(plan, usage);
 
+  if (solarCredit === null) {
+    return uncostable(
+      "Plan publishes a time-varying feed-in tariff, which this engine cannot price.",
+    );
+  }
+
   const observedCost =
   (
     usageCostBeforeGst +
@@ -583,9 +659,25 @@ export function calculateAnnualPlanCost(plan: EnergyPlanDetail, usage: RawConsum
   const annualCost =
     observedCost * (DAYS_PER_YEAR / observedDays);
 
+  const usageCostByBandType: Record<string, number> = {};
+
+  for (const [type, cost] of Object.entries(usageByBandType)) {
+    usageCostByBandType[type] = cost * GST_MULTIPLIER;
+  }
+
   return {
     annualCostAud: Number(annualCost.toFixed(2)),
     notes: [],
+    observed: {
+      days: observedDays,
+      costAud: observedCost,
+      usageCost: usageCostBeforeGst * GST_MULTIPLIER,
+      supplyCost: supplyCostBeforeGst * GST_MULTIPLIER,
+      controlledLoadCost:
+        controlledLoadCostBeforeGst * GST_MULTIPLIER,
+      solarCredit,
+      usageCostByBandType,
+    },
   };
 }
 

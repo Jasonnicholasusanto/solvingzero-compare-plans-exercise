@@ -448,6 +448,56 @@ describe("ranking and unusual rate structures", () => {
     expect(costOf(plan, touUsage)).toBeCloseTo(expected, 2);
   });
 
+  it("prices a tiered feed-in tariff on each day's export, not at the headline rate", () => {
+    // The real "Solar Max" shape: first 10 kWh/day at 8c, everything above at 1.5c,
+    // against a household exporting 12 kWh/day. Crediting all 12 at 8c overstates it.
+    const exporting = usageFrom(YEAR.map((date) => ({ date, import: 0.5, export: 0.25 })));
+
+    const plan = planOf("tiered-fit", {
+      tariffPeriod: [MAIN_SINGLE_RATE],
+      solarFeedInTariff: [
+        { singleTariff: { rates: [{ unitPrice: "0.08", volume: 10 }, { unitPrice: "0.015" }] } },
+      ],
+    });
+
+    // Per day: usage 7.20 + supply 1.00 = 8.20 ×1.1 = 9.02
+    //          credit 10×0.08 + 2×0.015 = 0.83 (NOT 12×0.08 = 0.96)
+    const expected = +(365 * ((24 * 0.3 + 1.0) * 1.1 - (10 * 0.08 + 2 * 0.015))).toFixed(2);
+    const headlineRateOnAll = +(365 * ((24 * 0.3 + 1.0) * 1.1 - 12 * 0.08)).toFixed(2);
+
+    expect(costOf(plan, exporting)).toBeCloseTo(expected, 2);
+    expect(costOf(plan, exporting)).not.toBeCloseTo(headlineRateOnAll, 2);
+  });
+
+  it("reports a time-varying feed-in tariff as uncostable rather than crediting zero", () => {
+    const exporting = usageFrom(YEAR.map((date) => ({ date, import: 0.5, export: 0.25 })));
+
+    // `timeVaryingTariffs` carries no singleTariff. Silently crediting nothing would
+    // bury the plan for a heavy exporter, so it is refused with a reason instead.
+    const plan = planOf("time-varying-fit", {
+      tariffPeriod: [MAIN_SINGLE_RATE],
+      solarFeedInTariff: [{}],
+    });
+
+    const result = resultOf(plan, exporting);
+
+    expect(result.annualCostAud).toBeNull();
+    expect((result.notes ?? []).join(" ")).toMatch(/feed-in/i);
+  });
+
+  it("still costs a time-varying feed-in plan for a household that exports nothing", () => {
+    const noExport = usageFrom(YEAR.map((date) => ({ date, import: 0.5 })));
+
+    const plan = planOf("time-varying-no-export", {
+      tariffPeriod: [MAIN_SINGLE_RATE],
+      solarFeedInTariff: [{}],
+    });
+
+    const expected = +(365 * (24 * 0.3 + 1.0) * 1.1).toFixed(2);
+
+    expect(costOf(plan, noExport)).toBeCloseTo(expected, 2);
+  });
+
   it("reports a demand-charge plan as uncostable with a reason, not as cheaper", () => {
     // types.ts: "a costing engine that treats this as ordinary usage makes the plan look falsely
     // cheap". Silently ignoring the charge has the same effect, so the plan is refused instead.
