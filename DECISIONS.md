@@ -11,7 +11,7 @@ This document is intended to capture the decisions made during the solution and 
 - [✓] Read the README.md and GOAL_GUIDE.md to understand the requirements and goals of the exercise.
 - [✓] Review the provided data files (`retailers.json`, `service-points.json`, etc.) to understand the structure and relationships of the data.
 - [✓] Explore the existing codebase, including the stubs in `src/fetchPlans.ts` and `src/estimatePlanCosts.ts`, to understand where to implement the required functionality.
-- [✓] Run the verification and test scripts (`npm run verify` and `npm test`) to ensure the development environment is correctly set up and that the existing tests are passing.
+- [✓] Run the verification and test scripts (`pnpm verify` and `pnpm test`) to ensure the development environment is correctly set up and that the existing tests are passing.
 - [✓] Implement the `fetchPlans` function to retrieve plans from the provided retailers, ensuring that the function adheres to the specified filtering criteria and handles pagination and concurrency appropriately.
 - [✓] Implement unit tests for the `fetchPlans` function to validate its correctness and ensure that it handles various scenarios, including edge cases and error conditions.
 - [✓] Implement the `estimatePlanCosts` function to calculate the annual cost of each applicable plan based on the household's electricity usage and the plan's pricing structure.
@@ -33,7 +33,7 @@ This document is intended to capture the decisions made during the solution and 
 1. **Understanding the Requirements**: I thoroughly read through the README.md and GOAL_GUIDE.md to understand the task requirements, the data provided, and the expected outcomes.
 2. **Familiarization with the Data**: I reviewed the `retailers.json`, `service-points.json`, and the `DATA_DICTIONARY.md` to understand the structure and relationships of the data, as well as the specific fields that would be relevant for filtering and cost calculations.
 3. **Went through the codebase**: I explored the existing code structure, including the stubs in `src/fetchPlans.ts` and `src/estimatePlanCosts.ts`, to understand where to implement the required functionality.
-4. **Ran the verification and test scripts**: After reading the README.md, I executed `npm install` to setup the workspace, then ran the following commands of `npm run verify` and `npm test` to ensure that my development environment was correctly set up and that the existing tests were passing. At this point in time, I observed that `npm test` was failing due to the stubs not being implemented yet, which was expected.
+4. **Ran the verification and test scripts**: After reading the README.md, I executed `pnpm install` to set up the workspace, then ran `pnpm verify` and `pnpm test` to ensure that the development environment was correctly configured. At this point, `pnpm test` was failing because the stubs had not been implemented yet, which was expected.
 5. **Utilized AI for assistance**: I leveraged AI tools to act as a senior full-stack engineer to assist in understanding the requirements, data structures, and to provide guidance on implementing the solution effectively. Breaking down the tasks and giving me a clear picture of where the codebase is at and what needs to be done.
 6. **Understand & Test the API endpoints**: I used Postman to test some of the API endpoints provided by the retailers to ensure that I could successfully retrieve the plans and their details, and to understand the structure of the responses.
 7. **Skimmed through the DATA_DICTIONARY.md & https://consumerdatastandardsaustralia.github.io/ page**: I reviewed the data dictionary and the Consumer Data Standards Australia documentation to ensure I had a clear understanding of the data formats, naming conventions, and any specific requirements for handling the data. A little bit of exploration to get a clearer picture of the data that I will be dealing with. Read through the schema and response examples to handle the data cleanly, implement the filtering, and error handling effectively.
@@ -199,7 +199,7 @@ I broke down the development process into several key decisions and steps, which
 
 ## Testing
 
-`npm test` — **127 tests across 5 files, all passing.** `npm run typecheck` is clean.
+`pnpm test` — **127 tests across 5 files, all passing.** `pnpm typecheck` is clean.
 
 | File | Tests | What it covers |
 | --- | ---: | --- |
@@ -250,19 +250,19 @@ Everything is runnable from the repo root. **Start with `scripts/test-recommend-
 
 | Command | Network | What it shows |
 | --- | :---: | --- |
-| `npm run verify` | no | Provided smoke test: toolchain works and the household data loads. |
-| `npm test` | no | The full suite — 127 tests, all offline. |
-| `npm run typecheck` | no | `tsc --noEmit`. |
-| `npx tsx scripts/test-load-retailers.mts` | no | The 10 retailers and their CDR base URIs. |
-| `npx tsx scripts/test-load-customer-data.mts` | no | Raw usage and service-point records (verbose — mostly a sanity check that the loaders work). |
-| `npx tsx scripts/test-calculate-current-energy-costs.mts` | no | **What the household pays today.** Full JSON: usage-based spend, the billed figures, and the line-by-line reconciliation between them. |
-| `npx tsx scripts/test-fetch-plans.mts` | **yes** | Fetches every retailer's plans live, filters to the ones this household is eligible for, and lists them with their rate-block type. |
-| `npx tsx scripts/test-estimate-plan-costs.mts` | **yes** | Fetches live, costs every applicable plan, prints them all and names the cheapest. |
-| `npx tsx scripts/test-recommend-plan.mts` | **yes** | **The answer.** Today's cost, the best switch, the saving, where the current plan ranks, the cheapest alternatives, and what could not be compared. |
+| `pnpm verify` | no | Provided smoke test: toolchain works and the household data loads. |
+| `pnpm test` | no | The full suite — 127 tests, all offline. |
+| `pnpm typecheck` | no | `tsc --noEmit`. |
+| `pnpm --filter @solvingzero/core exec tsx scripts/test-load-retailers.mts` | no | The 10 retailers and their CDR base URIs. |
+| `pnpm --filter @solvingzero/core exec tsx scripts/test-load-customer-data.mts` | no | Raw usage and service-point records (verbose — mostly a sanity check that the loaders work). |
+| `pnpm --filter @solvingzero/core exec tsx scripts/test-calculate-current-energy-costs.mts` | no | **What the household pays today.** Full JSON: usage-based spend, the billed figures, and the line-by-line reconciliation between them. |
+| `pnpm --filter @solvingzero/core exec tsx scripts/test-fetch-plans.mts` | **yes** | Fetches every retailer's plans live, filters to the ones this household is eligible for, and lists them with their rate-block type. |
+| `pnpm --filter @solvingzero/core exec tsx scripts/test-estimate-plan-costs.mts` | **yes** | Fetches live, costs every applicable plan, prints them all and names the cheapest. |
+| `pnpm --filter @solvingzero/core exec tsx scripts/test-recommend-plan.mts` | **yes** | **The answer.** Today's cost, the best switch, the saving, where the current plan ranks, the cheapest alternatives, and what could not be compared. |
 
 The three network scripts hit the public CDR endpoints (no auth, no keys). A full run takes about **30 seconds** — roughly 220 applicable plans, each needing a detail request, at five concurrent requests per retailer.
 
-A reviewer with no network can still see all of it: `npm test` exercises the same code paths offline, including the recommendation end-to-end against the 249-plan recorded snapshot in `fixtures/`.
+A reviewer with no network can still see all of it: `pnpm test` exercises the same code paths offline, including the recommendation end-to-end against the 249-plan recorded snapshot in `fixtures/`.
 
 ### Live vs snapshot
 

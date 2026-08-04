@@ -4,19 +4,21 @@
   "private": true,
   "description": "SolvingZero take-home: fetch real CDR electricity plans and estimate + rank their annual cost for a real household usage profile.",
   "type": "module",
+  "packageManager": "pnpm@11.20.0",
   "scripts": {
-    "verify": "tsx scripts/verify-setup.mts",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "verify": "turbo run verify",
+    "test": "turbo run test",
+    "test:watch": "turbo run test:watch",
+    "typecheck": "turbo run typecheck",
+    "clean": "turbo run clean && rm -rf node_modules apps/*/node_modules packages/*/node_modules .turbo"
   },
   "engines": {
     "node": ">=20"
   },
   "devDependencies": {
-    "@types/node": "^22.20.0",
-    "tsx": "^4.19.2",
-    "typescript": "^5.6.3",
-    "vitest": "^2.1.8"
+    "turbo": "^2.10.8",
+    "typescript": "^5.6.3"
   }
 }

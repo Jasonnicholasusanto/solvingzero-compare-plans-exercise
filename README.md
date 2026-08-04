@@ -20,9 +20,10 @@ Click the badge (or **Code ▸ Codespaces ▸ Create codespace on main**). The d
 
 ```bash
 nvm use          # optional — pins Node 22 (see .nvmrc)
-npm install
-npm run verify   # confirms your toolchain + that the data loads (does NOT test your solution)
-npm test         # the contract test — fails until you implement the stubs
+corepack enable
+pnpm install
+pnpm verify   # confirms your toolchain + that the data loads (does NOT test your solution)
+pnpm test     # the contract test — fails until you implement the stubs
 ```
 
 You implement two stubs in `src/`: [`fetchPlans.ts`](src/fetchPlans.ts) and [`estimatePlanCosts.ts`](src/estimatePlanCosts.ts). Then read [`GOAL_GUIDE.md`](GOAL_GUIDE.md) and pick where to start.
@@ -93,8 +94,8 @@ There is also a **short live walkthrough** after you submit (~20–30 min): we'l
 ## Running it
 
 ```bash
-npm install
-npm run verify    # setup smoke-test: confirms Node/TS + that the data loads
-npm test          # the example/contract test (fails until you implement)
-npm run typecheck
+pnpm install
+pnpm verify       # setup smoke-test: confirms Node/TS + that the data loads
+pnpm test         # the example/contract test (fails until you implement)
+pnpm typecheck
 ```

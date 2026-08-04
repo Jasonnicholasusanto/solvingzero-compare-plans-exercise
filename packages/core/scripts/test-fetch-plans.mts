@@ -1,5 +1,5 @@
-import { fetchPlans } from "../src/fetchPlans";
-import { loadRetailers, loadServicePoints } from "../src/loadData";
+import { fetchPlans } from "../src/fetchPlans.js";
+import { loadRetailers, loadServicePoints } from "../src/loadData.js";
 
 console.log("Fetching plans for all retailers and service points...");
 const servicePoints = loadServicePoints();
