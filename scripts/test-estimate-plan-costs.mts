@@ -20,4 +20,8 @@ const planCosts = estimatePlanCosts({
   plans,
 });
 
-console.log(`Estimated plan costs:`, planCosts);
+for (const planCost of planCosts) {
+  console.log(
+    `Plan ${planCost.planId} (${planCost.planName}) from ${planCost.brandName} — Estimated annual cost: $${planCost.annualCostAud}`,
+  );
+}

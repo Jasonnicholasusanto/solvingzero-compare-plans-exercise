@@ -1,4 +1,4 @@
-import { EnergyPlanDetail, RawServicePoints } from "../types";
+import { EnergyPlanDetail, RawConsumption, RawServicePoints } from "../types";
 
 
 /**
@@ -168,6 +168,8 @@ function isPlanActive(
 
 /**
  * This function checks if a plan is applicable to the household, based on fuel type, customer type, and distributor.
+ * 
+ * Used by fetchPlans.ts and estimatePlanCosts.ts to filter out inapplicable plans before estimating costs.
  */
 export function isPlanApplicable(
   plan: EnergyPlanDetail,
@@ -196,4 +198,64 @@ export function isPlanApplicable(
       normaliseDistributor(distributor),
     ),
   );
+}
+
+type UsageRecord = RawConsumption["usage"][number];
+
+/**
+ * Retrieve all grid-import records.
+ */
+export function getImportRecords(usage: RawConsumption): UsageRecord[] {
+  return usage.usage.filter(
+    (record) => record.register_suffix === "E1",
+  );
+}
+
+/**
+ * Retrieve all solar-export records.
+ */
+export function getExportRecords(usage: RawConsumption): UsageRecord[] {
+  return usage.usage.filter(
+    (record) => record.register_suffix === "B1",
+  );
+}
+
+/** 
+ * Parse a price string into a number, throwing an error if the value is missing or invalid.
+ */
+export function parsePrice(value: string | number | undefined | null): number | null {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+
+  const parsed = Number(value);
+
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * This function parses a time string in the format "HH:MM" and returns the total number of minutes since midnight.
+ */
+export function parseTimeToMinutes(value: string): number | null {
+  const match = /^(\d{2}):(\d{2})$/.exec(value);
+
+  if (!match) {
+    return null;
+  }
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+
+  if (
+    !Number.isInteger(hours) ||
+    !Number.isInteger(minutes) ||
+    hours < 0 ||
+    hours > 23 ||
+    minutes < 0 ||
+    minutes > 59
+  ) {
+    return null;
+  }
+
+  return hours * 60 + minutes;
 }

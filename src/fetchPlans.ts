@@ -19,7 +19,7 @@
  */
 
 import { type RawServicePoints, type EnergyPlanDetail, type Retailer, type ListPlansResponse, type PlanDetailResponse, DETAIL_CONCURRENCY } from "./types.js";
-import { getDatePart, getHouseholdDistributors, getLocalDate, isPlanApplicable, mapWithConcurrency, removeTrailingSlash } from "./utils/helpers.js";
+import { getHouseholdDistributors, getLocalDate, isPlanApplicable, mapWithConcurrency, removeTrailingSlash } from "./utils/helpers.js";
 
 
 /**

@@ -200,6 +200,7 @@ export interface EnergyPlanDetail {
 export interface RankedPlanCost {
   planId: string;
   planName: string;
+  brandName?: string;
   /** False if the plan doesn't apply to this household (wrong distributor / customer type). */
   applicable: boolean;
   /** Annual cost in AUD; null when it can't be costed (say why in `notes`). */
