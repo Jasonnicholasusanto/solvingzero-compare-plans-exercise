@@ -1,6 +1,7 @@
 import { Alternatives } from "@/components/alternatives";
 import { CurrentSpend } from "@/components/current-spend";
 import { MethodNotes } from "@/components/method-notes";
+import { Methodology } from "@/components/methodology";
 import { SavingHeadline } from "@/components/saving-headline";
 import { getRecommendation } from "@/lib/recommendation";
 
@@ -17,6 +18,9 @@ export async function Recommendation() {
 
       {/* Full width: four columns of figures don't survive being squeezed into half a row. */}
       <Alternatives recommendation={recommendation} />
+
+      {/* Full width: the carousel needs the room to show three steps at a time. */}
+      <Methodology observedDays={recommendation.current.fromUsage.observedDays} />
 
       <div className="grid items-start gap-6 lg:grid-cols-2">
         <CurrentSpend current={recommendation.current} />
