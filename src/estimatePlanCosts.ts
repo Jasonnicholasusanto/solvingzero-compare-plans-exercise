@@ -11,8 +11,9 @@ import {
   type RankedPlanCost,
   GST_MULTIPLIER,
   DAYS_PER_YEAR,
+  CdrControlledLoad,
 } from "./types.js";
-import { getDayCode, getExportRecords, getHouseholdDistributors, getImportRecords, getLocalDate, isPlanApplicable, isTimeInWindow, parsePrice, parseTimeToMinutes } from "./utils/helpers.js";
+import { getControlledLoadRecords, getDayCode, getExportRecords, getHouseholdDistributors, getImportRecords, getLocalDate, getNormalImportRecords, isPlanApplicable, isTimeInWindow, parsePrice, parseTimeToMinutes } from "./utils/helpers.js";
 
 export interface EstimateInput {
   usage: RawConsumption;
@@ -54,7 +55,7 @@ function countObservedDays(usage: RawConsumption): number {
  * Negative E1 values are ignored defensively.
  */
 function calculateImportedKwh(usage: RawConsumption): number {
-  return getImportRecords(usage).reduce((total, record) => {
+  return getNormalImportRecords(usage).reduce((total, record) => {
     const intervalTotal = record.interval_read.interval_reads.reduce(
       (recordTotal, value) => {
         return recordTotal + Math.max(0, value);
@@ -141,6 +142,62 @@ function findTimeOfUsePrice(
 }
 
 /**
+ * Find the applicable TOU unit price for one interval but for controlled-load.
+ */
+function findControlledLoadTimeOfUsePrice(
+  tariff: CdrControlledLoad,
+  date: string,
+  intervalMinutes: number,
+): number | null {
+  const dayCode = getDayCode(date);
+
+  if (!dayCode) {
+    return null;
+  }
+
+  for (const timeOfUseRate of tariff.timeOfUseRates ?? []) {
+    const unitPrice = parsePrice(
+      timeOfUseRate.rates?.[0]?.unitPrice,
+    );
+
+    if (unitPrice === null) {
+      continue;
+    }
+
+    for (const window of timeOfUseRate.timeOfUse ?? []) {
+      if (!(window.days ?? []).includes(dayCode)) {
+        continue;
+      }
+
+      const startMinutes =
+        parseTimeToMinutes(window.startTime);
+
+      const endMinutes =
+        parseTimeToMinutes(window.endTime);
+
+      if (
+        startMinutes === null ||
+        endMinutes === null
+      ) {
+        continue;
+      }
+
+      if (
+        isTimeInWindow(
+          intervalMinutes,
+          startMinutes,
+          endMinutes,
+        )
+      ) {
+        return unitPrice;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
  * This function calculates the time-of-use rate usage cost for a given energy plan based on the household's electricity usage.
  * 
  * Formula: Annual cost = (Σ each interval's imported kWh × matching TOU rate + days × daily supply charge) × 1.1 − (Total exported kWh × feed-in tariff)
@@ -155,7 +212,7 @@ function calculateTimeOfUseUsageCost(
 ): number | null {
   let totalCost = 0;
 
-  for (const record of getImportRecords(usage)) {
+  for (const record of getNormalImportRecords(usage)) {
     const intervalLength =
       record.interval_read.read_interval_length;
 
@@ -239,6 +296,8 @@ function calculateSingleRateUsageCost(plan: EnergyPlanDetail, usage: RawConsumpt
 /**
  * This function calculates the solar feed-in credit (export kWh) for a given energy plan based on the household's electricity usage.
  * 
+ * Formula: Solar feed-in credit = Total exported kWh × feed-in tariff
+ * 
  * @param plan The energy plan to calculate the usage cost for.
  * @param usage The household's electricity usage data. In this case, export B1 channel.
  * @returns The estimated solar feed-in credit.
@@ -259,6 +318,174 @@ function calculateSolarCredit(plan: EnergyPlanDetail, usage: RawConsumption): nu
   const totalExportKWh = calculateExportedKwh(usage);
 
   return totalExportKWh * feedInRate;
+}
+
+/**
+ * This function calculates the controlled-load single rate cost for a given energy plan based on the household's electricity usage.
+ * 
+ * @param tariff The controlled-load tariff to calculate the cost for.
+ * @param records The household's controlled-load electricity usage records.
+ * @returns The estimated controlled-load cost, or null if it cannot be calculated.
+ */
+function calculateControlledLoadSingleRateCost(
+  tariff: CdrControlledLoad,
+  records: ReturnType<typeof getControlledLoadRecords>,
+): number | null {
+  const singleRate = tariff.singleRate?.rates?.[0];
+
+  if (!singleRate) {
+    return null; // No single rate defined
+  }
+
+  const unitPrice = parsePrice(singleRate.unitPrice);
+
+  if (unitPrice === null) {
+    return null; // Invalid unit price
+  }
+
+  const totalImportKWh = records.reduce((total, record) => {
+    const intervalTotal = record.interval_read.interval_reads.reduce(
+      (recordTotal, value) => {
+        return recordTotal + Math.max(0, value);
+      },
+      0,
+    );
+
+    return total + intervalTotal;
+  }, 0);
+
+  return totalImportKWh * unitPrice;
+}
+
+/**
+ * This function calculates the controlled-load time-of-use cost for a given energy plan based on the household's electricity usage.
+ * 
+ * @param tariff The controlled-load tariff to calculate the cost for.
+ * @param records The household's controlled-load electricity usage records.
+ * @returns The estimated controlled-load cost, or null if it cannot be calculated.
+ */
+function calculateControlledLoadTimeOfUseCost(
+  tariff: CdrControlledLoad,
+  records: ReturnType<typeof getControlledLoadRecords>,
+): number | null {
+  const timeOfUseRates = tariff.timeOfUseRates ?? [];
+  
+  if (timeOfUseRates.length === 0) {
+    return null; // No time-of-use rates defined
+  }
+
+  let totalCost = 0;
+
+  for (const record of records) {
+    const intervalLength = record.interval_read.read_interval_length;
+
+    if (!Number.isFinite(intervalLength) || intervalLength <= 0) {
+      return null; // Invalid interval length
+    }
+
+    for (let index = 0; index < record.interval_read.interval_reads.length; index++) {
+      const intervalKwh = record.interval_read.interval_reads[index] ?? 0;
+      const importedKwh = Math.max(0, intervalKwh);
+
+      if (importedKwh === 0) {
+        continue; // No import for this interval
+      }
+
+      const intervalMinutes = index * intervalLength;
+      const unitPrice =
+        findControlledLoadTimeOfUsePrice(
+          tariff,
+          record.read_start_date,
+          intervalMinutes,
+        );
+
+      if (unitPrice === null) {
+        return null; // Cannot find a matching TOU rate
+      }
+
+      totalCost += importedKwh * unitPrice;
+    }
+  }
+
+  return totalCost;
+}
+
+/**
+ * This function calculates the controlled-load cost for a given energy plan based on the household's electricity usage.
+ * 
+ * Formula: Annual cost = (Σ each controlled-load interval's imported kWh × matching controlled-load rate + observed days × daily supply charge)
+ *
+ * @param plan The energy plan to calculate the controlled-load cost for.
+ * @param usage The household's electricity usage data. In this case, controlled-load channel.
+ * @param observedDays The number of days observed in the usage data.
+ * @returns The estimated controlled-load cost, or null if it cannot be calculated.
+ */
+function calculateControlledLoadCost(
+  plan: EnergyPlanDetail,
+  usage: RawConsumption,
+  observedDays: number,
+): number | null {
+  const records = getControlledLoadRecords(usage);
+
+  // No controlled-load usage means no controlled-load charge.
+  if (records.length === 0) {
+    return 0;
+  }
+
+  const controlledLoadTariffs =
+    plan.electricityContract.controlledLoad ?? [];
+
+  // The household has controlled-load usage, but the plan
+  // does not publish controlled-load pricing.
+  if (controlledLoadTariffs.length === 0) {
+    return null;
+  }
+
+  /*
+   * A plan can potentially publish multiple controlled-load
+   * tariffs. This first implementation uses the first tariff.
+   *
+   * Supporting multiple controlled-load channels properly would
+   * require mapping each meter register to the correct tariff.
+   */
+  const tariff = controlledLoadTariffs[0];
+
+  if (!tariff) {
+    return null;
+  }
+
+  let usageCost: number | null;
+
+  switch (tariff.rateBlockUType) {
+    case "singleRate":
+      usageCost = calculateControlledLoadSingleRateCost(
+        tariff,
+        records,
+      );
+      break;
+
+    case "timeOfUseRates":
+      usageCost = calculateControlledLoadTimeOfUseCost(
+        tariff,
+        records,
+      );
+      break;
+
+    default:
+      usageCost = null;
+  }
+
+  if (usageCost === null) {
+    return null;
+  }
+
+  const dailySupplyCharge =
+    parsePrice(tariff.dailySupplyCharge) ?? 0;
+
+  const supplyCost =
+    observedDays * dailySupplyCharge;
+
+  return usageCost + supplyCost;
 }
 
 /**
@@ -321,12 +548,26 @@ export function calculateAnnualPlanCost(plan: EnergyPlanDetail, usage: RawConsum
   const supplyCostBeforeGst =
     observedDays * dailySupplyCharge;
 
+  const controlledLoadCostBeforeGst = calculateControlledLoadCost(
+    plan,
+    usage,
+    observedDays,
+  );
+
+  if (controlledLoadCostBeforeGst === null) {
+    return null; // Cannot calculate controlled-load cost
+  }
+
   const solarCredit = calculateSolarCredit(plan, usage);
 
   const observedCost =
-    (usageCostBeforeGst + supplyCostBeforeGst) *
-      GST_MULTIPLIER -
-    solarCredit;
+  (
+    usageCostBeforeGst +
+    controlledLoadCostBeforeGst +
+    supplyCostBeforeGst
+  ) *
+    GST_MULTIPLIER -
+  solarCredit;
 
   /*
    * The visible test contains exactly 365 days, so the

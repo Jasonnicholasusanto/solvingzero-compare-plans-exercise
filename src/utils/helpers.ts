@@ -220,6 +220,31 @@ export function getExportRecords(usage: RawConsumption): UsageRecord[] {
   );
 }
 
+/**
+ * Normal household imports use the main single-rate or TOU tariff.
+ *
+ * Records without controlled_load are also treated as normal usage,
+ * which keeps the synthetic contract tests working.
+ */
+export function getNormalImportRecords(
+  usage: RawConsumption,
+): UsageRecord[] {
+  return getImportRecords(usage).filter(
+    (record) => record.controlled_load !== true,
+  );
+}
+
+/**
+ * Controlled-load records are priced separately from normal usage.
+ */
+export function getControlledLoadRecords(
+  usage: RawConsumption,
+): UsageRecord[] {
+  return usage.usage.filter(
+    (record) => record.controlled_load === true,
+  );
+}
+
 /** 
  * Parse a price string into a number, throwing an error if the value is missing or invalid.
  */

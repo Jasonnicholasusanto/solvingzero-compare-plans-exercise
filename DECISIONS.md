@@ -36,30 +36,114 @@ This document is intended to capture the decisions made during the solution and 
 ## My thought process and approach to the solution:
 I drew this simple flow chart to show my thought process and approach to the solution:
 
-```
-Load household data 
-        ↓ 
-fetchPlans() 
-        ↓ 
-Detailed applicable energy plans 
-        ↓ 
+```text
+Load household data
+        │
+        ├── usage
+        ├── service points
+        └── retailers
+        │
+        ▼
+fetchPlans()
+        │
+        ├── fetch retailer plan lists
+        ├── handle pagination
+        ├── fetch detailed plan pricing
+        └── filter plans for the household
+        │
+        ▼
+Detailed applicable energy plans
+        │
+        ▼
 estimatePlanCosts(input)
         │
-        ├── map over every plan
+        ├── Prepare household information
+        │       ├── identify household distributors
+        │       ├── identify normal import records
+        │       ├── identify controlled-load records
+        │       └── identify solar-export records
         │
-        ├── check whether the plan applies
+        ├── Map over every plan
+        │       │
+        │       ├── Check whether the plan is applicable
+        │       │       ├── ELECTRICITY
+        │       │       ├── RESIDENTIAL
+        │       │       ├── active plan
+        │       │       └── matching distributor
+        │       │
+        │       ├── If not applicable
+        │       │       └── annualCostAud = null
+        │       │
+        │       └── If applicable
+        │               │
+        │               ▼
+        │       calculateAnnualPlanCost(plan, usage)
+        │               │
+        │               ├── Calculate normal usage cost
+        │               │       │
+        │               │       ├── singleRate
+        │               │       │       └── total normal-import kWh
+        │               │       │           × unit price
+        │               │       │
+        │               │       └── timeOfUseRates
+        │               │               └── each normal-import interval
+        │               │                   × matching TOU price
+        │               │
+        │               ├── Calculate controlled-load cost
+        │               │       │
+        │               │       ├── No controlled-load records
+        │               │       │       └── controlled-load cost = 0
+        │               │       │
+        │               │       ├── singleRate
+        │               │       │       └── total controlled-load kWh
+        │               │       │           × controlled-load unit price
+        │               │       │
+        │               │       └── timeOfUseRates
+        │               │               └── each controlled-load interval
+        │               │                   × matching controlled-load TOU price
+        │               │
+        │               ├── Add supply charges
+        │               │       ├── main daily supply charge
+        │               │       └── controlled-load daily supply charge
+        │               │
+        │               ├── Apply GST
+        │               │       └── (usage + controlled load + supply) × 1.1
+        │               │
+        │               ├── Calculate solar feed-in credit
+        │               │       ├── single feed-in tariff, or
+        │               │       └── time-varying feed-in tariff
+        │               │
+        │               ├── Subtract solar credit
+        │               │
+        │               ├── Annualise to 365 days
+        │               │
+        │               └── Return null if pricing is incomplete
         │
-        ├── calculate annual cost when applicable
+        ├── Return one result per plan
         │
-        ├── return null when it cannot be costed
+        └── Sort applicable, costable plans cheapest-first
         │
-        └── sort valid costs cheapest-first
-        ↓
-Retrieve annual cost per plan 
-        ↓ 
-Sort valid plans cheapest-first
-        ↓
+        ▼
 Return ranked plan recommendations
+        │
+        ├── planId
+        ├── planName
+        ├── brandName
+        ├── applicable
+        └── annualCostAud
+```
+
+### Annual Cost Formula
+
+```text
+Annual cost =
+(
+  normal usage cost
+  + controlled-load usage cost
+  + main supply charges
+  + controlled-load supply charges
+) × 1.1
+− solar feed-in credit
 ```
 
 ## Development Process & Decisions
