@@ -13,6 +13,7 @@
 //   - controlled load is a SEPARATELY metered register with its own rate and its own supply charge
 // Where a day count other than 365 is used, the annual figure is the observed cost scaled by 365/days.
 
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { estimatePlanCosts } from "./estimatePlanCosts.js";
 import { priceTieredUsage } from "./utils/helpers.js";
@@ -498,6 +499,39 @@ describe("ranking and unusual rate structures", () => {
     expect(costOf(plan, noExport)).toBeCloseTo(expected, 2);
   });
 
+  it("reports a demand charge published as a tariff period, not just a contract field", () => {
+    // CDR allows both locations and real plans use the tariff-period form exclusively:
+    // a summer/non-summer pair of singleRate + demandCharges periods. Reading only
+    // tariffPeriod[0] and only electricityContract.demandCharges misses every one.
+    const plan = planOf("seasonal-demand", {
+      tariffPeriod: [
+        { ...MAIN_SINGLE_RATE, singleRate: { rates: [{ unitPrice: "0.19" }] } },
+        {
+          rateBlockUType: "demandCharges",
+          demandCharges: [
+            { amount: "0.3755", measureUnit: "KW", chargePeriod: "DAY", days: ALL_DAYS, startTime: "00:00", endTime: "00:00" },
+          ],
+        } as never,
+        { ...MAIN_SINGLE_RATE, singleRate: { rates: [{ unitPrice: "0.19" }] } },
+      ],
+    });
+
+    const result = resultOf(plan, usage);
+
+    expect(result.annualCostAud).toBeNull();
+    expect((result.notes ?? []).join(" ")).toMatch(/demand/i);
+  });
+
+  it("still costs a plan whose later tariff periods are ordinary rate blocks", () => {
+    // Only a demandCharges block disqualifies a plan; extra seasonal energy periods
+    // must not, or every seasonal plan would drop out of the ranking.
+    const plan = planOf("seasonal-energy", {
+      tariffPeriod: [MAIN_SINGLE_RATE, MAIN_SINGLE_RATE],
+    });
+
+    expect(costOf(plan, usage)).not.toBeNull();
+  });
+
   it("reports a demand-charge plan as uncostable with a reason, not as cheaper", () => {
     // types.ts: "a costing engine that treats this as ordinary usage makes the plan look falsely
     // cheap". Silently ignoring the charge has the same effect, so the plan is refused instead.
@@ -592,5 +626,53 @@ describe("priceTieredUsage", () => {
     const zeroHero = [{ unitPrice: "0.000001", volume: 50 }, { unitPrice: "0.23" }];
     expect(priceTieredUsage(zeroHero, 6)).toBeCloseTo(6 * 0.000001, 9);
     expect(priceTieredUsage(zeroHero, 60)).toBeCloseTo(50 * 0.000001 + 10 * 0.23, 9);
+  });
+});
+
+// ───────────────────────── against the recorded snapshot ─────────────────────────
+
+describe("recorded snapshot", () => {
+  // The synthetic cases above pin the rules; this pins them against the shapes real
+  // retailers actually publish, which is where the demand-charge location was missed.
+  const snapshot = JSON.parse(
+    readFileSync(new URL("../fixtures/sample-plans.json", import.meta.url), "utf8"),
+  );
+  const snapshotPlans: EnergyPlanDetail[] = Array.isArray(snapshot)
+    ? snapshot
+    : (snapshot.plans ?? snapshot.data?.plans ?? []);
+
+  const hasDemandPeriod = (plan: EnergyPlanDetail) =>
+    (plan.electricityContract?.tariffPeriod ?? []).some((p) => p.rateBlockUType === "demandCharges") ||
+    (plan.electricityContract?.demandCharges ?? []).length > 0;
+
+  const usage = usageFrom(YEAR.map((date) => ({ date, import: 0.5, export: 0.25 })));
+  const ranked = estimatePlanCosts({ usage, servicePoints: CITIPOWER_SP, plans: snapshotPlans });
+
+  it("has demand-charge plans to test against", () => {
+    expect(snapshotPlans.filter(hasDemandPeriod).length).toBeGreaterThan(0);
+  });
+
+  it("costs no plan that carries a demand charge, wherever it is published", () => {
+    const demandIds = new Set(snapshotPlans.filter(hasDemandPeriod).map((p) => p.planId));
+    const costedDemandPlans = ranked.filter(
+      (r) => demandIds.has(r.planId) && typeof r.annualCostAud === "number",
+    );
+
+    expect(costedDemandPlans).toEqual([]);
+  });
+
+  it("does not put a demand-charge plan at the top of the ranking", () => {
+    const cheapest = ranked.find((r) => typeof r.annualCostAud === "number")!;
+    const plan = snapshotPlans.find((p) => p.planId === cheapest.planId)!;
+
+    expect(hasDemandPeriod(plan)).toBe(false);
+  });
+
+  it("explains every uncostable applicable plan", () => {
+    for (const result of ranked) {
+      if (result.applicable && result.annualCostAud === null) {
+        expect(result.notes?.length ?? 0).toBeGreaterThan(0);
+      }
+    }
   });
 });
