@@ -48,7 +48,7 @@ export function Alternatives({ recommendation }: { recommendation: PlanRecommend
                     <TableCell className="font-medium">
                       <span className="flex items-center gap-2">
                         {plan.planName}
-                        {plan.planId === recommended?.planId && <Badge variant="secondary">Best</Badge>}
+                        {plan.planId === recommended?.planId && <Badge>Best</Badge>}
                       </span>
                     </TableCell>
                     <TableCell className="text-muted-foreground">{plan.brandName ?? "—"}</TableCell>
