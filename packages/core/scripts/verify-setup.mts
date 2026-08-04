@@ -1,6 +1,6 @@
 /**
- * Setup smoke-test — run `npm run verify` after `npm install` to confirm your toolchain and the
- * bundled data load correctly before you start. It does NOT test your solution (that's `npm test`).
+ * Setup smoke-test — run `pnpm verify` after `pnpm install` to confirm your toolchain and the
+ * bundled data load correctly before you start. It does NOT test your solution (that's `pnpm test`).
  *
  * @format
  */

@@ -26,4 +26,9 @@ for (const planCost of planCosts) {
   );
 }
 
-console.log(`Cheapest plan is ${planCosts[0].planId} (${planCosts[0].planName}) from ${planCosts[0].brandName} — Estimated annual cost: AUD $${planCosts[0].annualCostAud}`);
+const cheapest = planCosts[0];
+if (cheapest) {
+  console.log(`Cheapest plan is ${cheapest.planId} (${cheapest.planName}) from ${cheapest.brandName} — Estimated annual cost: AUD $${cheapest.annualCostAud}`);
+} else {
+  console.log("No plans could be costed.");
+}

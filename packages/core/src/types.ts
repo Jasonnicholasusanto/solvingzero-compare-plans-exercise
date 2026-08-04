@@ -74,9 +74,23 @@ export interface RawElectricityContract {
   solar_feed_in_tariff?: Array<{ single_tariff?: { rates: SnakeRate[] } }>;
 }
 
+/**
+ * An entry from `institutions.json` — the retailer directory. An account carries only an
+ * `institution_id`, so the retailer's name lives here rather than on the plan.
+ */
+export interface Institution {
+  id: string;
+  name: string;
+  icon?: string;
+  logo?: string;
+  industry?: string;
+}
+
 export interface RawAccounts {
   accounts: Array<{
     account_id?: string;
+    /** Joins to `Institution.id` — this is the only pointer to who the retailer is. */
+    institution_id?: string;
     plans?: Array<{
       plan_overview?: { display_name?: string; start_date?: string; end_date?: string };
       plan_detail?: { fuel_type?: string; electricity_contract?: RawElectricityContract };

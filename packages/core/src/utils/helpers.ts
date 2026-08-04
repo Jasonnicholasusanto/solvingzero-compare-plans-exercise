@@ -1,4 +1,4 @@
-import { CdrRate, DAY_CODES, EnergyPlanDetail, RawConsumption, RawServicePoints } from "../types";
+import { CdrRate, DAY_CODES, EnergyPlanDetail, RawConsumption, RawServicePoints } from "../types.js";
 
 
 /**

@@ -11,7 +11,7 @@ This document is intended to capture the decisions made during the solution and 
 - [✓] Read the README.md and GOAL_GUIDE.md to understand the requirements and goals of the exercise.
 - [✓] Review the provided data files (`retailers.json`, `service-points.json`, etc.) to understand the structure and relationships of the data.
 - [✓] Explore the existing codebase, including the stubs in `src/fetchPlans.ts` and `src/estimatePlanCosts.ts`, to understand where to implement the required functionality.
-- [✓] Run the verification and test scripts (`npm run verify` and `npm test`) to ensure the development environment is correctly set up and that the existing tests are passing.
+- [✓] Run the verification and test scripts (`pnpm verify` and `pnpm test`) to ensure the development environment is correctly set up and that the existing tests are passing.
 - [✓] Implement the `fetchPlans` function to retrieve plans from the provided retailers, ensuring that the function adheres to the specified filtering criteria and handles pagination and concurrency appropriately.
 - [✓] Implement unit tests for the `fetchPlans` function to validate its correctness and ensure that it handles various scenarios, including edge cases and error conditions.
 - [✓] Implement the `estimatePlanCosts` function to calculate the annual cost of each applicable plan based on the household's electricity usage and the plan's pricing structure.
@@ -24,7 +24,8 @@ This document is intended to capture the decisions made during the solution and 
 
 ### Nice to have:
 - [] Implement additional features or optimizations, such as caching plan details to reduce API calls, or providing more detailed cost breakdowns for each plan.
-- [] Implement the Next.js frontend!
+- [✓] Implement the Next.js frontend!
+- [✓] Refine frontend UI/UX to improve usability and presentation of the plan recommendations and cost comparisons.
 
 
 ## Pre-development Process
@@ -33,7 +34,7 @@ This document is intended to capture the decisions made during the solution and 
 1. **Understanding the Requirements**: I thoroughly read through the README.md and GOAL_GUIDE.md to understand the task requirements, the data provided, and the expected outcomes.
 2. **Familiarization with the Data**: I reviewed the `retailers.json`, `service-points.json`, and the `DATA_DICTIONARY.md` to understand the structure and relationships of the data, as well as the specific fields that would be relevant for filtering and cost calculations.
 3. **Went through the codebase**: I explored the existing code structure, including the stubs in `src/fetchPlans.ts` and `src/estimatePlanCosts.ts`, to understand where to implement the required functionality.
-4. **Ran the verification and test scripts**: After reading the README.md, I executed `npm install` to setup the workspace, then ran the following commands of `npm run verify` and `npm test` to ensure that my development environment was correctly set up and that the existing tests were passing. At this point in time, I observed that `npm test` was failing due to the stubs not being implemented yet, which was expected.
+4. **Ran the verification and test scripts**: After reading the README.md, I executed `pnpm install` to set up the workspace, then ran `pnpm verify` and `pnpm test` to ensure that the development environment was correctly configured. At this point, `pnpm test` was failing because the stubs had not been implemented yet, which was expected.
 5. **Utilized AI for assistance**: I leveraged AI tools to act as a senior full-stack engineer to assist in understanding the requirements, data structures, and to provide guidance on implementing the solution effectively. Breaking down the tasks and giving me a clear picture of where the codebase is at and what needs to be done.
 6. **Understand & Test the API endpoints**: I used Postman to test some of the API endpoints provided by the retailers to ensure that I could successfully retrieve the plans and their details, and to understand the structure of the responses.
 7. **Skimmed through the DATA_DICTIONARY.md & https://consumerdatastandardsaustralia.github.io/ page**: I reviewed the data dictionary and the Consumer Data Standards Australia documentation to ensure I had a clear understanding of the data formats, naming conventions, and any specific requirements for handling the data. A little bit of exploration to get a clearer picture of the data that I will be dealing with. Read through the schema and response examples to handle the data cleanly, implement the filtering, and error handling effectively.
@@ -197,9 +198,65 @@ I broke down the development process into several key decisions and steps, which
 - **What I would do next**: the two cheapest results are the same product with and without controlled load, at the same price. This household has no controlled-load register, so the variant is noise in the list; dropping controlled-load plans when the household has no such usage would tidy it.
 ---
 
+## Frontend Development
+
+The engine answers the question; the UI has to make someone act on it. This section covers the tooling decisions taken to get there, and the judgement calls inside the interface itself.
+
+### Restructuring into a monorepo
+
+The exercise ships as a flat library — `src/`, `scripts/`, `user_data/` at the root. Adding a web app to that root would have meant one `package.json` carrying both `vitest` and `next`, and one `tsconfig.json` trying to serve Node ESM and a JSX bundler at once. Those two things want genuinely different compiler settings, so I split them:
+
+```text
+apps/web/          Next.js UI              @solvingzero/web
+packages/core/     the cost engine         @solvingzero/core
+```
+
+The engine moved wholesale into `packages/core` — source, scripts, tests, and its data fixtures (`user_data/`, `retailers.json`) — so the package is self-contained and never reaches outside its own directory for data. `loadData.ts` resolves paths relative to its own module, so the move needed no code change.
+
+**The one constraint I held onto**: `pnpm test`, `pnpm verify` and `pnpm typecheck` still work from the repo root, because that is what the README tells a reviewer to run. They now delegate through Turborepo rather than running Vitest directly.
+
+**Why Turborepo.** With two packages there is a real build order — the web app can't typecheck until the engine has emitted its declarations. Turborepo's `dependsOn: ["^build"]` expresses that once, in `turbo.json`, instead of me remembering to build core first. Caching is a secondary benefit at this size, though `typecheck` and `test` replaying from cache does make the loop noticeably tighter.
+
+**Why the engine is compiled rather than consumed as source.** Turborepo's docs favour "just-in-time" packages that export raw TypeScript, and it is less setup. I built `packages/core` to `dist/` instead, because the engine's imports carry explicit `.js` extensions (Node ESM style) and relying on a bundler to resolve those back to `.ts` is a subtle failure mode I did not want between me and the UI. Compiling also forces the package to declare a real public surface, which is `src/index.ts` — the web app can import `recommendPlan` and cannot reach into `src/utils/helpers.ts`.
+
+### npm → pnpm
+
+The repo started on npm and I moved it to pnpm once the second package existed.
+
+- **Disk and install time.** pnpm's content-addressed store hard-links packages instead of copying them. With Next, React, recharts and shadcn's dependency tree duplicated across two workspaces, that is a meaningful difference on every install.
+- **`workspace:*` is explicit.** `"@solvingzero/core": "workspace:*"` cannot silently resolve to something from the registry. Under npm's `*` it could, if a package of that name ever existed publicly.
+- **Strict `node_modules` by default.** pnpm won't let a package import a dependency it hasn't declared. That caught nothing here, but it is the class of bug that only surfaces in someone else's checkout.
+
+**The cost, honestly**: a reviewer now needs pnpm rather than the npm they already have, and `packageManager` in the root `package.json` pins the version. For a take-home that is a small extra hurdle, and I judged the workspace ergonomics worth it. `corepack enable` is enough to get it.
+
+### Next.js and shadcn/ui
+
+**Next.js** because the goal guide names it, and because the App Router lets the engine run where it already works. `recommendPlan` reads fixtures off disk and calls ten CDR endpoints — that is server work, and a server component calls it directly with no API route in between. The one configuration this needs is `serverExternalPackages: ["@solvingzero/core"]`: bundling the package would rewrite `import.meta.url` and break the on-disk paths its loaders depend on.
+
+**shadcn/ui** because it is copied into the repo rather than installed as a dependency. Every component lands in `components/ui/` as editable source, so restyling `Card` to carry the brand shadow was an edit, not a battle with a library's theming API. Tailwind v4's `@theme` then carries the palette as tokens.
+
+**The costing is slow and that shaped the page.** A cold run is ~25 seconds — 223 plan details across ten retailers. Options were to fetch on every request (unusable), fetch at build time only (stale), or cache. The route uses `export const revalidate = 3600`: rendered once, refreshed hourly in the background, instant for the visitor. Retailers republish pricing far less often than hourly, so the staleness is theoretical. **The trade-off is that `pnpm build` now needs network access and takes ~25 seconds longer**, because the page is prerendered. A `<Suspense>` boundary around the data-dependent subtree keeps the shell instant when the page does render on demand.
+
+### Interface decisions
+
+- **The saving leads.** The primary insight is one number — *"Save $205 a year"* — at the top left, with the working beside it. Everything below exists to justify that number rather than compete with it.
+- **Charts start at zero.** The bar chart comparing today against the best plan, and the ranked bars in the alternatives list, both scale from zero. A truncated axis would turn a 14% difference into a visual chasm; on a page whose job is telling someone how much they would save, that is the line between informing and overselling.
+- **Bar length and bar colour encode different things.** In the alternatives list, length is zero-based against the biggest saving, so it is honest about magnitude. Colour ramps green → amber *relative to this list*, which is what separates plans that sit within a few dollars of each other. The ramp is suppressed entirely when every plan falls within the materiality threshold, so a trivial spread is never dressed up as a meaningful one.
+- **The method is on the page, not in this document.** A "How we cost a plan" card carries the formula and the seven steps as a carousel. A saving figure the household cannot interrogate is one they will not act on.
+- **Brand colours were taken from the source, and corrected.** solvingzero.com publishes its palette as `--chakra-colors-landing-*` tokens; I converted them to oklch rather than eyeballing screenshots. Their signature green `#40ab6d` fails WCAG AA as text (2.89:1), so green *type* uses their own darker `#1f7a44` (5.35:1) while fills keep the brighter green with ink text on top.
+
+### What I would do next
+
+- **`RankedPlanCost.breakdown` is declared but never populated**, so the comparison chart can only plot totals. Threading the per-component figures the engine already computes in `ObservedPlanCost` through `estimatePlanCosts` would allow a stacked usage/supply/solar comparison.
+- **The materiality threshold is duplicated.** `recommendPlan` takes `materialSavingAud` (default 30) as an input but does not publish it on the result, so the UI restates the constant. Exposing it on `PlanRecommendation` would remove the drift risk.
+- **No frontend tests.** The engine has 127; the UI has none. Nothing checks that the methodology copy still matches what `calculateAnnualPlanCost` does — that coupling is prose against code, and it will rot silently.
+- **No loading state is ever seen in production.** Because the route prerenders, the skeleton only appears in development. It is built and correct, but effectively untested by real use.
+
+---
+
 ## Testing
 
-`npm test` — **127 tests across 5 files, all passing.** `npm run typecheck` is clean.
+`pnpm test` — **127 tests across 5 files, all passing.** `pnpm typecheck` is clean.
 
 | File | Tests | What it covers |
 | --- | ---: | --- |
@@ -250,19 +307,19 @@ Everything is runnable from the repo root. **Start with `scripts/test-recommend-
 
 | Command | Network | What it shows |
 | --- | :---: | --- |
-| `npm run verify` | no | Provided smoke test: toolchain works and the household data loads. |
-| `npm test` | no | The full suite — 127 tests, all offline. |
-| `npm run typecheck` | no | `tsc --noEmit`. |
-| `npx tsx scripts/test-load-retailers.mts` | no | The 10 retailers and their CDR base URIs. |
-| `npx tsx scripts/test-load-customer-data.mts` | no | Raw usage and service-point records (verbose — mostly a sanity check that the loaders work). |
-| `npx tsx scripts/test-calculate-current-energy-costs.mts` | no | **What the household pays today.** Full JSON: usage-based spend, the billed figures, and the line-by-line reconciliation between them. |
-| `npx tsx scripts/test-fetch-plans.mts` | **yes** | Fetches every retailer's plans live, filters to the ones this household is eligible for, and lists them with their rate-block type. |
-| `npx tsx scripts/test-estimate-plan-costs.mts` | **yes** | Fetches live, costs every applicable plan, prints them all and names the cheapest. |
-| `npx tsx scripts/test-recommend-plan.mts` | **yes** | **The answer.** Today's cost, the best switch, the saving, where the current plan ranks, the cheapest alternatives, and what could not be compared. |
+| `pnpm verify` | no | Provided smoke test: toolchain works and the household data loads. |
+| `pnpm test` | no | The full suite — 127 tests, all offline. |
+| `pnpm typecheck` | no | `tsc --noEmit`. |
+| `pnpm --filter @solvingzero/core exec tsx scripts/test-load-retailers.mts` | no | The 10 retailers and their CDR base URIs. |
+| `pnpm --filter @solvingzero/core exec tsx scripts/test-load-customer-data.mts` | no | Raw usage and service-point records (verbose — mostly a sanity check that the loaders work). |
+| `pnpm --filter @solvingzero/core exec tsx scripts/test-calculate-current-energy-costs.mts` | no | **What the household pays today.** Full JSON: usage-based spend, the billed figures, and the line-by-line reconciliation between them. |
+| `pnpm --filter @solvingzero/core exec tsx scripts/test-fetch-plans.mts` | **yes** | Fetches every retailer's plans live, filters to the ones this household is eligible for, and lists them with their rate-block type. |
+| `pnpm --filter @solvingzero/core exec tsx scripts/test-estimate-plan-costs.mts` | **yes** | Fetches live, costs every applicable plan, prints them all and names the cheapest. |
+| `pnpm --filter @solvingzero/core exec tsx scripts/test-recommend-plan.mts` | **yes** | **The answer.** Today's cost, the best switch, the saving, where the current plan ranks, the cheapest alternatives, and what could not be compared. |
 
 The three network scripts hit the public CDR endpoints (no auth, no keys). A full run takes about **30 seconds** — roughly 220 applicable plans, each needing a detail request, at five concurrent requests per retailer.
 
-A reviewer with no network can still see all of it: `npm test` exercises the same code paths offline, including the recommendation end-to-end against the 249-plan recorded snapshot in `fixtures/`.
+A reviewer with no network can still see all of it: `pnpm test` exercises the same code paths offline, including the recommendation end-to-end against the 249-plan recorded snapshot in `fixtures/`.
 
 ### Live vs snapshot
 

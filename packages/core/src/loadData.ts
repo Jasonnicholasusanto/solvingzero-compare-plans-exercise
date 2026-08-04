@@ -8,7 +8,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import type { RawConsumption, RawServicePoints, RawAccounts, RawDer, RawBilling, Retailer } from "./types.js";
+import type { RawConsumption, RawServicePoints, RawAccounts, RawDer, RawBilling, Retailer, Institution } from "./types.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const RAW = join(ROOT, "user_data");
@@ -40,4 +40,9 @@ export function loadDer(): RawDer {
 
 export function loadBills(): RawBilling {
   return readJson<RawBilling>("bills.json");
+}
+
+/** Retailer directory. Join `Institution.id` to an account's `institution_id` to name it. */
+export function loadInstitutions(): Institution[] {
+  return readJson<Institution[]>("institutions.json");
 }

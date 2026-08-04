@@ -1,0 +1,260 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/**
+ * Palette lifted from solvingzero.com's own `--chakra-colors-landing-*` token set,
+ * converted from hex to oklch. Source values, for anyone checking against the site:
+ *
+ *   paper   #fbfaf4   cream    #f7f5eb   cream-deep #efece0   line #e7e3d3
+ *   ink     #0b1a10   ink2     #1a2b21   ink3       #41504a   ink4 #7a8680
+ *   green   #40ab6d   green700 #1f7a44   green800   #0f5a30
+ *   solar   #f2b950   solar-deep #a8761d  accent    #734dc8   info #2a6fdb
+ *   warn    #c0473a
+ *
+ * The brand is warm cream over deep green — deliberately not neutral grey.
+ */
+:root {
+  color-scheme: light;
+
+  /* Surfaces: paper page, white cards lifted off it, cream for recessed areas. */
+  --background: oklch(0.9842 0.008 98.88);
+  --foreground: oklch(0.2705 0.0294 157.91);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.2705 0.0294 157.91);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.2705 0.0294 157.91);
+
+  /**
+   * Green is the action colour. The signature #40ab6d is kept for fills, but white on it
+   * is only 2.89:1 — so text sitting on green is ink, at 6.21:1.
+   */
+  --primary: oklch(0.6636 0.135 154.57);
+  --primary-foreground: oklch(0.2005 0.029 153.81);
+
+  /**
+   * #40ab6d as *text* on cream is 2.89:1 — it fails even the 3:1 large-text bar, so green
+   * type uses their own `landing-green700` (#1f7a44, 5.35:1) instead. Same for the amber:
+   * `solar-deep` reads 3.98:1, darkened here to clear 4.5:1.
+   */
+  --primary-strong: oklch(0.5135 0.1191 152.59);
+  --solar-strong: oklch(0.5187 0.102 75.61);
+
+  --secondary: oklch(0.969 0.0134 97.44);
+  --secondary-foreground: oklch(0.2705 0.0294 157.91);
+
+  --muted: oklch(0.9421 0.0163 95.23);
+  --muted-foreground: oklch(0.4163 0.0214 169.07);
+
+  --accent: oklch(0.9421 0.0163 95.23);
+  --accent-foreground: oklch(0.2005 0.029 153.81);
+
+  --destructive: oklch(0.5614 0.158 29.12);
+
+  --border: oklch(0.9146 0.0218 95.3);
+  --input: oklch(0.9146 0.0218 95.3);
+  --ring: oklch(0.6636 0.135 154.57);
+
+  /**
+   * Brand extras beyond the shadcn contract. `solar` is their amber — reserved on the
+   * site for solar/energy figures, which is exactly what feed-in credits are here.
+   */
+  --solar: oklch(0.8189 0.1368 79.92);
+  --solar-foreground: oklch(0.2858 0.0595 78.62);
+  --solar-deep: oklch(0.6023 0.1165 76.32);
+  --info: oklch(0.5593 0.1794 259.4);
+  --info-foreground: oklch(1 0 0);
+
+  /* Categorical series, ordered for distinguishability rather than by hue. */
+  --chart-1: oklch(0.6636 0.135 154.57);
+  --chart-2: oklch(0.8189 0.1368 79.92);
+  --chart-3: oklch(0.413 0.0987 153.01);
+  --chart-4: oklch(0.5269 0.1824 293.37);
+  --chart-5: oklch(0.5593 0.1794 259.4);
+
+  --radius: 0.625rem;
+
+  /**
+   * Two layers: a tight contact shadow that seats the card, and a wider ambient one that
+   * lifts it. Tinted with ink rather than neutral black — pure black over the cream
+   * background goes grey and muddy.
+   */
+  --shadow-card:
+    0 1px 2px -1px oklch(0.2005 0.029 153.81 / 0.07),
+    0 6px 16px -6px oklch(0.2005 0.029 153.81 / 0.1);
+
+  --sidebar: oklch(0.969 0.0134 97.44);
+  --sidebar-foreground: oklch(0.2705 0.0294 157.91);
+  --sidebar-primary: oklch(0.6636 0.135 154.57);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.9421 0.0163 95.23);
+  --sidebar-accent-foreground: oklch(0.2005 0.029 153.81);
+  --sidebar-border: oklch(0.9146 0.0218 95.3);
+  --sidebar-ring: oklch(0.6636 0.135 154.57);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+body {
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+@theme inline {
+  --font-heading: var(--font-heading);
+  --font-sans: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-info-foreground: var(--info-foreground);
+  --color-info: var(--info);
+  --color-solar-strong: var(--solar-strong);
+  --color-solar-deep: var(--solar-deep);
+  --color-solar-foreground: var(--solar-foreground);
+  --color-solar: var(--solar);
+  --color-primary-strong: var(--primary-strong);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --shadow-card: var(--shadow-card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/**
+ * solvingzero.com ships no dark theme, so this is derived rather than sampled: their
+ * ink greens become the surfaces, cream becomes the text, and the green stays put —
+ * at L 0.66 it already carries on a dark ground.
+ */
+.dark {
+  color-scheme: dark;
+
+  --background: oklch(0.2005 0.029 153.81);
+  --foreground: oklch(0.969 0.0134 97.44);
+  --card: oklch(0.2705 0.0294 157.91);
+  --card-foreground: oklch(0.969 0.0134 97.44);
+  --popover: oklch(0.2705 0.0294 157.91);
+  --popover-foreground: oklch(0.969 0.0134 97.44);
+
+  --primary: oklch(0.6636 0.135 154.57);
+  --primary-foreground: oklch(0.2005 0.029 153.81);
+
+  --secondary: oklch(0.33 0.029 157);
+  --secondary-foreground: oklch(0.969 0.0134 97.44);
+
+  --muted: oklch(0.33 0.029 157);
+  /* ink4 itself is only 3.93:1 on the ink2 card, so it lifts for dark surfaces. */
+  --muted-foreground: oklch(0.7 0.0167 164.4);
+
+  --accent: oklch(0.33 0.029 157);
+  --accent-foreground: oklch(0.969 0.0134 97.44);
+
+  --destructive: oklch(0.65 0.15 29.12);
+
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.6636 0.135 154.57);
+
+  --solar: oklch(0.8189 0.1368 79.92);
+  --solar-foreground: oklch(0.2858 0.0595 78.62);
+  --solar-deep: oklch(0.7 0.1165 76.32);
+  --info: oklch(0.68 0.15 259.4);
+  --info-foreground: oklch(0.2005 0.029 153.81);
+
+  /* On ink, the light-mode darkening reverses: the bright originals are the readable ones. */
+  --primary-strong: oklch(0.6636 0.135 154.57);
+  --solar-strong: oklch(0.8189 0.1368 79.92);
+
+  --chart-1: oklch(0.6636 0.135 154.57);
+  --chart-2: oklch(0.8189 0.1368 79.92);
+  --chart-3: oklch(0.55 0.0987 153.01);
+  --chart-4: oklch(0.7158 0.1331 299.75);
+  --chart-5: oklch(0.68 0.15 259.4);
+
+  /* Ink-on-ink would vanish, so the dark theme falls back to black at higher alpha. */
+  --shadow-card:
+    0 1px 2px -1px oklch(0 0 0 / 0.4),
+    0 6px 16px -6px oklch(0 0 0 / 0.5);
+
+  --sidebar: oklch(0.2705 0.0294 157.91);
+  --sidebar-foreground: oklch(0.969 0.0134 97.44);
+  --sidebar-primary: oklch(0.6636 0.135 154.57);
+  --sidebar-primary-foreground: oklch(0.2005 0.029 153.81);
+  --sidebar-accent: oklch(0.33 0.029 157);
+  --sidebar-accent-foreground: oklch(0.969 0.0134 97.44);
+  --sidebar-border: oklch(1 0 0 / 12%);
+  --sidebar-ring: oklch(0.6636 0.135 154.57);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+  /*
+   * Body copy inherits Inter from `html`. Headings opt into Plus Jakarta Sans here so the
+   * split is structural rather than something every component has to remember — shadcn's
+   * CardTitle already carries `font-heading`, which covers the card headings that aren't
+   * h-tags.
+   */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-heading;
+  }
+}

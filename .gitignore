@@ -2,3 +2,14 @@ node_modules/
 dist/
 *.log
 .DS_Store
+
+# build output / caches
+.next/
+out/
+.turbo/
+.pnpm-store/
+*.tsbuildinfo
+
+# env
+.env
+.env*.local
