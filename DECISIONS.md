@@ -96,4 +96,19 @@ I broke down the development process into several key decisions and steps, which
 ### Development 2: Estimating Plan Costs
 - **Decision**: Implement the `estimatePlanCosts` function to calculate the annual cost of each applicable plan based on the household's electricity usage and the plan's pricing structure.
 - **Rationale**: After fetching the applicable plans, we need to estimate the annual cost for each plan to provide a ranked list of recommendations for the household. This step is crucial for comparing the plans and determining which one offers the best value based on the household's electricity usage.
-- **Implementation**: The function will take the household's electricity usage and the plan's pricing structure as inputs, and calculate the total annual cost by applying the relevant rates and fees. The calculation will consider factors such as fixed charges, usage charges, and any applicable discounts or incentives. The function will return a list of plans with their estimated annual costs, which can then be sorted to provide the final recommendations.
+- **Implementation**: The function will take the household's electricity usage and the plan's pricing structure as inputs, and calculate the total annual cost by applying the relevant rates and fees. The calculation will consider factors such as fixed charges, usage charges, and any applicable discounts or incentives. The function will return a list of plans with their estimated annual costs, which can then be sorted to provide the final recommendations. What I need to implement (key calculations and implementations) include:
+
+        1. Calculate imported electricity: Sum the positive imported kWh from normal and controlled-load usage records.
+        2. Calculate exported electricity: Sum the solar-export kWh, converting negative B1 interval values into positive export quantities.
+        3. Calculate usage charges: Apply the appropriate pricing model to imported electricity:
+          a. single-rate pricing;
+          b. time-of-use pricing based on each interval’s day and time;
+          c. controlled-load pricing where applicable.
+        4. Calculate supply charges: Multiply each applicable daily supply charge by the number of observed usage days.
+        5. Apply GST: Apply the 1.1 GST multiplier to usage and supply charges.
+        6. Calculate the solar feed-in credit: Apply the relevant flat or time-varying feed-in tariff to exported electricity. Do not apply GST to the feed-in credit.
+        7. Calculate the net observed cost: Net cost = (usage charges + supply charges) × 1.1 − solar feed-in credit
+        8. Annualise the result: Scale the observed-period cost to 365 days when the provided usage period is shorter than one year.
+        9. Handle missing pricing safely: Return annualCostAud: null when a plan cannot be reliably costed, rather than returning zero or throwing an error.
+        10. Return all plan results: Return one identified result for every supplied plan, including applicable and inapplicable plans.
+        11. Rank the plans: Sort applicable plans with numeric annual costs from cheapest to most expensive.

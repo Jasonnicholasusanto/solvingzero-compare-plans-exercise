@@ -237,6 +237,31 @@ function calculateSingleRateUsageCost(plan: EnergyPlanDetail, usage: RawConsumpt
 }
 
 /**
+ * This function calculates the solar feed-in credit (export kWh) for a given energy plan based on the household's electricity usage.
+ * 
+ * @param plan The energy plan to calculate the usage cost for.
+ * @param usage The household's electricity usage data. In this case, export B1 channel.
+ * @returns The estimated solar feed-in credit.
+ */
+function calculateSolarCredit(plan: EnergyPlanDetail, usage: RawConsumption): number {
+  const solarFeedInTariff = plan.electricityContract?.solarFeedInTariff?.[0];
+
+  if (!solarFeedInTariff || !solarFeedInTariff.singleTariff) {
+    return 0; // No solar feed-in tariff defined
+  }
+
+  const feedInRate = parsePrice(solarFeedInTariff.singleTariff.rates?.[0]?.unitPrice);
+
+  if (feedInRate === null) {
+    return 0; // Invalid feed-in rate
+  }
+
+  const totalExportKWh = calculateExportedKwh(usage);
+
+  return totalExportKWh * feedInRate;
+}
+
+/**
  * This function is the calculation engine, it calculates the annual cost of a given energy plan based on the household's electricity usage.
  * 
  * i.e. takes into account for single rate and time of use rates calculations.
@@ -296,8 +321,12 @@ export function calculateAnnualPlanCost(plan: EnergyPlanDetail, usage: RawConsum
   const supplyCostBeforeGst =
     observedDays * dailySupplyCharge;
 
+  const solarCredit = calculateSolarCredit(plan, usage);
+
   const observedCost =
-    (usageCostBeforeGst + supplyCostBeforeGst) * GST_MULTIPLIER;
+    (usageCostBeforeGst + supplyCostBeforeGst) *
+      GST_MULTIPLIER -
+    solarCredit;
 
   /*
    * The visible test contains exactly 365 days, so the
