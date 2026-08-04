@@ -15,6 +15,7 @@
 
 import { describe, expect, it } from "vitest";
 import { estimatePlanCosts } from "./estimatePlanCosts.js";
+import { priceTieredUsage } from "./utils/helpers.js";
 import type { EnergyPlanDetail, RawConsumption, RawServicePoints } from "./types.js";
 
 // ───────────────────────── household + usage builders ─────────────────────────
@@ -127,11 +128,15 @@ const MAIN_SINGLE_RATE = {
 };
 
 /** Costs one plan against one usage profile, asserting the fixture is actually applicable. */
-function costOf(plan: EnergyPlanDetail, usage: RawConsumption): number | null {
+function resultOf(plan: EnergyPlanDetail, usage: RawConsumption) {
   const [result] = estimatePlanCosts({ usage, servicePoints: CITIPOWER_SP, plans: [plan] });
   // Guard: a fixture that quietly fails eligibility would return null and pass a naive assertion.
   expect(result!.applicable).toBe(true);
-  return result!.annualCostAud;
+  return result!;
+}
+
+function costOf(plan: EnergyPlanDetail, usage: RawConsumption): number | null {
+  return resultOf(plan, usage).annualCostAud;
 }
 
 // ───────────────────────── controlled load ─────────────────────────
@@ -363,13 +368,9 @@ describe("robustness", () => {
   });
 });
 
-// ───────────────────────── ranking + unpriced structures ─────────────────────────
-//
-// These four assert behaviour the brief requires but the engine does not implement yet. They are
-// expected to FAIL until it does — see the notes in DECISIONS.md. Keeping them red is deliberate:
-// deleting them would hide the gap rather than close it.
+// ───────────────────────── ranking, tiered blocks, demand charges ─────────────────────────
 
-describe("known gaps", () => {
+describe("ranking and unusual rate structures", () => {
   const usage = usageFrom(YEAR.map((date) => ({ date, import: 0.5 })));
 
   const cheap = planOf("cheap", {
@@ -396,29 +397,60 @@ describe("known gaps", () => {
     expect(costable).toEqual([...costable].sort((a, b) => a - b));
   });
 
-  it("does not price a tiered block plan as if every kWh were at the first tier", () => {
+  it("prices a tiered block plan band by band, per day", () => {
     // DATA_DICTIONARY.md: multiple rates[] with a `volume` ceiling = a stepped price by consumption.
-    // Whatever the reset window, 24 kWh/day cannot all be billed at the 10 kWh tier's 20c rate.
     const tiered = planOf("tiered", {
       tariffPeriod: [
         {
           rateBlockUType: "singleRate",
           dailySupplyCharge: "1.00",
-          singleRate: { rates: [{ unitPrice: "0.20", volume: 10, period: "P1D" }, { unitPrice: "0.40" }] },
+          singleRate: { rates: [{ unitPrice: "0.20", volume: 10 }, { unitPrice: "0.40" }] },
         },
       ],
     });
 
+    // Per day: first 10 kWh @20c = 2.00 ; remaining 14 kWh @40c = 5.60 ; supply 1.00
+    //          → 8.60 ×1.1 = 9.46 → ×365 = 3452.90
+    const expected = +(365 * (10 * 0.2 + 14 * 0.4 + 1.0) * 1.1).toFixed(2);
+    // Billing all 24 kWh at the cheapest band would give 2328.70 — a 32% understatement.
     const allAtFirstTier = +(365 * (24 * 0.2 + 1.0) * 1.1).toFixed(2);
-    const cost = costOf(tiered, usage);
 
-    expect(cost === null || cost > allAtFirstTier).toBe(true);
+    expect(costOf(tiered, usage)).toBeCloseTo(expected, 2);
+    expect(costOf(tiered, usage)).not.toBeCloseTo(allAtFirstTier, 2);
   });
 
-  it("does not make a plan with demand charges look cheaper than the same plan without them", () => {
-    // types.ts: "a costing engine that treats this as ordinary usage makes the plan look falsely cheap".
-    // Ignoring the charge entirely has the same effect.
-    const withoutDemand = planOf("no-demand", { tariffPeriod: [MAIN_SINGLE_RATE] });
+  it("prices a tiered time-of-use band on the day's total in that band", () => {
+    // Modelled on GloBird ZEROHERO in the recorded snapshot: a SHOULDER window whose first
+    // 5 kWh/day are nearly free, then 23c. Pricing each half-hour separately would never
+    // leave the first tier, making the plan look almost free inside the window.
+    const shoulder = range(24, 30); // 12:00–15:00, 6 intervals
+    const touUsage = usageFrom(YEAR.map((date) => ({ date, import: only(shoulder, 1.5) })));
+
+    const plan = planOf("tou-tiered", {
+      tariffPeriod: [
+        {
+          rateBlockUType: "timeOfUseRates",
+          dailySupplyCharge: "1.00",
+          timeOfUseRates: [
+            {
+              type: "SHOULDER",
+              rates: [{ unitPrice: "0.01", volume: 5 }, { unitPrice: "0.23" }],
+              timeOfUse: [{ days: ALL_DAYS, startTime: "12:00", endTime: "15:00" }],
+            },
+          ],
+        },
+      ],
+    });
+
+    // 9 kWh/day in the window: 5 @1c = 0.05 ; 4 @23c = 0.92 ; supply 1.00 → 1.97 ×1.1
+    const expected = +(365 * (5 * 0.01 + 4 * 0.23 + 1.0) * 1.1).toFixed(2);
+
+    expect(costOf(plan, touUsage)).toBeCloseTo(expected, 2);
+  });
+
+  it("reports a demand-charge plan as uncostable with a reason, not as cheaper", () => {
+    // types.ts: "a costing engine that treats this as ordinary usage makes the plan look falsely
+    // cheap". Silently ignoring the charge has the same effect, so the plan is refused instead.
     const withDemand = planOf("with-demand", {
       tariffPeriod: [MAIN_SINGLE_RATE],
       demandCharges: [
@@ -426,9 +458,89 @@ describe("known gaps", () => {
       ],
     });
 
-    const baseline = costOf(withoutDemand, usage)!;
-    const cost = costOf(withDemand, usage);
+    const result = resultOf(withDemand, usage);
 
-    expect(cost === null || cost > baseline).toBe(true);
+    expect(result.annualCostAud).toBeNull();
+    expect((result.notes ?? []).join(" ")).toMatch(/demand/i);
+  });
+
+  it("explains every null cost, so an uncostable plan is never silently blank", () => {
+    const inapplicable = { ...cheap, planId: "wrong-network", geography: { distributors: ["POWERCOR"] } };
+    const noPricing = planOf("no-pricing", {
+      tariffPeriod: [{ rateBlockUType: "singleRate", dailySupplyCharge: "1.00", singleRate: { rates: [] } }],
+    });
+
+    const results = estimatePlanCosts({
+      usage,
+      servicePoints: CITIPOWER_SP,
+      plans: [cheap, inapplicable, noPricing],
+    });
+
+    for (const result of results) {
+      if (result.annualCostAud === null) {
+        expect(result.notes?.length ?? 0).toBeGreaterThan(0);
+      } else {
+        expect(result.notes ?? []).toHaveLength(0);
+      }
+    }
+  });
+});
+
+// ───────────────────────── tier pricing in isolation ─────────────────────────
+
+describe("priceTieredUsage", () => {
+  const TIERED = [{ unitPrice: "0.20", volume: 10 }, { unitPrice: "0.40" }];
+
+  it("treats a single unbounded rate as a flat price", () => {
+    expect(priceTieredUsage([{ unitPrice: "0.30" }], 24)).toBeCloseTo(7.2, 9);
+  });
+
+  it("splits usage across bands at the cumulative ceiling", () => {
+    expect(priceTieredUsage(TIERED, 24)).toBeCloseTo(10 * 0.2 + 14 * 0.4, 9);
+  });
+
+  it("keeps usage inside the first band when it stays below the ceiling", () => {
+    expect(priceTieredUsage(TIERED, 5)).toBeCloseTo(1, 9);
+    expect(priceTieredUsage(TIERED, 10)).toBeCloseTo(2, 9);
+    expect(priceTieredUsage(TIERED, 10.5)).toBeCloseTo(2.2, 9);
+  });
+
+  it("walks three bands in order", () => {
+    const rates = [{ unitPrice: "0.10", volume: 10 }, { unitPrice: "0.20", volume: 20 }, { unitPrice: "0.30" }];
+    expect(priceTieredUsage(rates, 24)).toBeCloseTo(1 + 2 + 1.2, 9);
+  });
+
+  it("sorts bands that are published out of ascending order", () => {
+    const reversed = [{ unitPrice: "0.40" }, { unitPrice: "0.20", volume: 10 }];
+    expect(priceTieredUsage(reversed, 24)).toBeCloseTo(10 * 0.2 + 14 * 0.4, 9);
+  });
+
+  it("returns zero for no usage", () => {
+    expect(priceTieredUsage(TIERED, 0)).toBe(0);
+    expect(priceTieredUsage(TIERED, -3)).toBe(0);
+  });
+
+  it("returns null when usage runs past the highest published ceiling", () => {
+    const capped = [{ unitPrice: "0.20", volume: 10 }];
+    expect(priceTieredUsage(capped, 24)).toBeNull();
+    expect(priceTieredUsage(capped, 8)).toBeCloseTo(1.6, 9);
+  });
+
+  it("returns null for unusable rate blocks", () => {
+    expect(priceTieredUsage([{ unitPrice: "abc" }], 24)).toBeNull();
+    expect(priceTieredUsage([], 24)).toBeNull();
+    expect(priceTieredUsage(undefined, 24)).toBeNull();
+    expect(priceTieredUsage([{ unitPrice: "0.2", volume: 0 }, { unitPrice: "0.4" }], 24)).toBeNull();
+  });
+
+  it("prices the real tiered blocks found in the recorded snapshot", () => {
+    // GloBird GLOSAVE: first 15 kWh at 25.8c, then 27.9c.
+    expect(priceTieredUsage([{ unitPrice: "0.258", volume: 15 }, { unitPrice: "0.279" }], 24))
+      .toBeCloseTo(15 * 0.258 + 9 * 0.279, 9);
+
+    // GloBird ZEROHERO: first 50 kWh effectively free, then 23c.
+    const zeroHero = [{ unitPrice: "0.000001", volume: 50 }, { unitPrice: "0.23" }];
+    expect(priceTieredUsage(zeroHero, 6)).toBeCloseTo(6 * 0.000001, 9);
+    expect(priceTieredUsage(zeroHero, 60)).toBeCloseTo(50 * 0.000001 + 10 * 0.23, 9);
   });
 });

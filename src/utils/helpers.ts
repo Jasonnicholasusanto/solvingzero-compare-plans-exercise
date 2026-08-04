@@ -1,4 +1,4 @@
-import { DAY_CODES, EnergyPlanDetail, RawConsumption, RawServicePoints } from "../types";
+import { CdrRate, DAY_CODES, EnergyPlanDetail, RawConsumption, RawServicePoints } from "../types";
 
 
 /**
@@ -256,6 +256,92 @@ export function parsePrice(value: string | number | undefined | null): number | 
   const parsed = Number(value);
 
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** Guards against a floating-point remainder being treated as unpriced energy. */
+const KWH_EPSILON = 1e-9;
+
+/**
+ * Price one period's energy against a CDR rate block, honouring tiered `volume` ceilings.
+ *
+ * A stepped tariff is published as multiple `rates[]`, each carrying the CUMULATIVE kWh
+ * ceiling it applies up to; the top band usually omits `volume`, meaning "and everything
+ * above". A block holding a single unbounded rate is therefore just a flat price, and
+ * costs the same through this function as it would by multiplication.
+ *
+ * Returns null when the block cannot be priced from what was published: no rates, an
+ * unparseable unitPrice, a malformed ceiling, or usage running past the highest ceiling
+ * with no open-ended band to absorb it.
+ */
+export function priceTieredUsage(
+  rates: CdrRate[] | undefined,
+  kwh: number,
+): number | null {
+  if (!rates || rates.length === 0) {
+    return null;
+  }
+
+  if (kwh <= 0) {
+    return 0;
+  }
+
+  const bands: Array<{ ceiling: number; unitPrice: number }> = [];
+  const openEndedPrices: number[] = [];
+
+  for (const rate of rates) {
+    const unitPrice = parsePrice(rate.unitPrice);
+
+    if (unitPrice === null) {
+      return null;
+    }
+
+    if (rate.volume === undefined || rate.volume === null) {
+      openEndedPrices.push(unitPrice);
+      continue;
+    }
+
+    if (!Number.isFinite(rate.volume) || rate.volume <= 0) {
+      return null;
+    }
+
+    bands.push({ ceiling: rate.volume, unitPrice });
+  }
+
+  // Published order is not guaranteed to be ascending.
+  bands.sort((a, b) => a.ceiling - b.ceiling);
+
+  let cost = 0;
+  let pricedKwh = 0;
+
+  for (const band of bands) {
+    if (pricedKwh >= kwh - KWH_EPSILON) {
+      break;
+    }
+
+    // Ceilings are cumulative, so this band's width is what is left below it.
+    const width = band.ceiling - pricedKwh;
+
+    if (width <= 0) {
+      continue;
+    }
+
+    const kwhInBand = Math.min(width, kwh - pricedKwh);
+
+    cost += kwhInBand * band.unitPrice;
+    pricedKwh += kwhInBand;
+  }
+
+  if (pricedKwh >= kwh - KWH_EPSILON) {
+    return cost;
+  }
+
+  const openEndedPrice = openEndedPrices[0];
+
+  if (openEndedPrice === undefined) {
+    return null;
+  }
+
+  return cost + (kwh - pricedKwh) * openEndedPrice;
 }
 
 /**

@@ -25,3 +25,5 @@ for (const planCost of planCosts) {
     `Plan ${planCost.planId} (${planCost.planName}) from ${planCost.brandName} — Estimated annual cost: $${planCost.annualCostAud}`,
   );
 }
+
+console.log(`Cheapest plan is ${planCosts[0].planId} (${planCosts[0].planName}) from ${planCosts[0].brandName} — Estimated annual cost: AUD $${planCosts[0].annualCostAud}`);
