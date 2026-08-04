@@ -241,3 +241,29 @@ Supply and feed-in match to the cent. Peak and off-peak each differ by a few per
 - **No test for the request timeout and retry**, because neither is implemented yet (see the known gaps under Development 1).
 - **Seasonal tariff periods are untested** because they are unhandled: only `tariffPeriod[0]` is read, so a plan with summer and winter energy rates is costed entirely at the first season's prices. 19 snapshot plans have multiple periods, and all 19 are already excluded for carrying demand charges — so this does not currently affect any costed plan, but it would if a retailer published seasonal rates without a demand charge.
 - **Public holidays** are billed at ordinary rates; there is no holiday calendar to test against.
+
+---
+
+## Scripts — how to run this yourself
+
+Everything is runnable from the repo root. **Start with `scripts/test-recommend-plan.mts`** — it is the headline answer, and the other scripts are the pieces underneath it.
+
+| Command | Network | What it shows |
+| --- | :---: | --- |
+| `npm run verify` | no | Provided smoke test: toolchain works and the household data loads. |
+| `npm test` | no | The full suite — 127 tests, all offline. |
+| `npm run typecheck` | no | `tsc --noEmit`. |
+| `npx tsx scripts/test-load-retailers.mts` | no | The 10 retailers and their CDR base URIs. |
+| `npx tsx scripts/test-load-customer-data.mts` | no | Raw usage and service-point records (verbose — mostly a sanity check that the loaders work). |
+| `npx tsx scripts/test-calculate-current-energy-costs.mts` | no | **What the household pays today.** Full JSON: usage-based spend, the billed figures, and the line-by-line reconciliation between them. |
+| `npx tsx scripts/test-fetch-plans.mts` | **yes** | Fetches every retailer's plans live, filters to the ones this household is eligible for, and lists them with their rate-block type. |
+| `npx tsx scripts/test-estimate-plan-costs.mts` | **yes** | Fetches live, costs every applicable plan, prints them all and names the cheapest. |
+| `npx tsx scripts/test-recommend-plan.mts` | **yes** | **The answer.** Today's cost, the best switch, the saving, where the current plan ranks, the cheapest alternatives, and what could not be compared. |
+
+The three network scripts hit the public CDR endpoints (no auth, no keys). A full run takes about **30 seconds** — roughly 220 applicable plans, each needing a detail request, at five concurrent requests per retailer.
+
+A reviewer with no network can still see all of it: `npm test` exercises the same code paths offline, including the recommendation end-to-end against the 249-plan recorded snapshot in `fixtures/`.
+
+### Live vs snapshot
+
+The recommendation is the same either way — **HomeDeal Smart – Time of Use, saving $204.68/yr** — which is a useful check that the snapshot tests are not passing on stale assumptions. The surrounding counts do drift, because the live CDR feed has moved since the snapshot was recorded: live returns 191 costable plans with 33 excluded (24 time-varying feed-in, 9 demand charge), where the snapshot has 207 costable and 31 excluded (12 and 19). Retailers add and withdraw plans continually, so exact counts in this document are point-in-time.
