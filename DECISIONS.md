@@ -41,6 +41,7 @@ I broke down the development process into several key decisions and steps, which
 ### Development 1: Fetching Plans from Retailers
 - **Decision**: Implement the `fetchPlans` function to retrieve plans from the provided retailers.
 - **Rationale**: This is the first step in the process, as we need to gather all available plans to filter and compare them against the household's current plan.
+- **AI Hand-off**: I used AI to generate the fetchPlans.test.ts file. Understood the need to call the fetchPlanDetails function concurrently to avoid long wait times, hence directed AI to assist me with the mapWithConcurrency function to handle concurrent requests efficiently.
 - **Implementation**: I built the function as a four-stage pipeline — derive the household's distributor, list every retailer's plan IDs, fetch the detail for each ID, then filter down to what actually applies. The stages below record the decisions worth justifying.
 
   **1. Keeping the HTTP separate from the filtering.** The brief calls this out, and it drove the file's structure. `fetchJson`, `listAllPlanIds` and `fetchPlanDetail` do the I/O; `isPlanApplicable` and `isPlanActive` are pure functions that take a plan and a date and return a boolean. That split means the eligibility rules — the part most likely to be wrong — are unit-tested directly against hand-built plans with no network and no mocking, while the HTTP layer is tested separately against a stubbed `fetch`.
