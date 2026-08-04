@@ -10,6 +10,7 @@ import type {
   EnergyPlanDetail,
   RankedPlanCost,
 } from "./types.js";
+import { getHouseholdDistributors, getLocalDate, isPlanApplicable } from "./utils/helpers.js";
 
 export interface EstimateInput {
   usage: RawConsumption;
@@ -17,9 +18,27 @@ export interface EstimateInput {
   plans: EnergyPlanDetail[];
 }
 
+export interface EstimatedPlanCost {
+  planId: string;
+  planName: string;
+  applicable: boolean;
+  annualCostAud: number | null;
+}
+
 export function estimatePlanCosts(input: EstimateInput): RankedPlanCost[] {
-  // TODO: implement.
-  throw new Error(
-    "estimatePlanCosts is not implemented yet — this is the exercise.",
-  );
+  const asOfDate = getLocalDate();
+  const householdDistributors =
+      getHouseholdDistributors(input.servicePoints);
+
+  const results = input.plans.map((plan, index) => {
+    const applicable = isPlanApplicable(
+      plan,
+      householdDistributors,
+      asOfDate,
+    );
+
+    return applicable;
+  });
+
+  return results as any;
 }

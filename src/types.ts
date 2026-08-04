@@ -234,4 +234,18 @@ export const EFFECTIVE_PARAMS = ['CURRENT', 'FUTURE', 'ALL'] as const;
 
 export const TYPES_PARAMS = ['STANDING', 'MARKET', 'REGULATED', 'ALL'] as const;
 
+export const DAY_CODES = [
+  "SUN",
+  "MON",
+  "TUE",
+  "WED",
+  "THU",
+  "FRI",
+  "SAT",
+] as const;
+
+export const GST_MULTIPLIER = 1.1;
+
+export const DAYS_PER_YEAR = 365;
+
 export const DETAIL_CONCURRENCY = 5; // how many plan detail requests to run in parallel

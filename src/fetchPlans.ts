@@ -19,77 +19,8 @@
  */
 
 import { type RawServicePoints, type EnergyPlanDetail, type Retailer, type ListPlansResponse, type PlanDetailResponse, DETAIL_CONCURRENCY } from "./types.js";
-import { getDatePart, getHouseholdDistributors, getLocalDate, mapWithConcurrency, normaliseDistributor, removeTrailingSlash } from "./utils/helpers.js";
+import { getDatePart, getHouseholdDistributors, getLocalDate, isPlanApplicable, mapWithConcurrency, removeTrailingSlash } from "./utils/helpers.js";
 
-
-/**
- * Determine if a plan is active on the given date.
- *
- * This is a pure function, so it can be unit-tested without any HTTP.
- */
-function isPlanActive(
-  plan: EnergyPlanDetail,
-  asOfDate: string,
-): boolean {
-  const effectiveFrom = plan.effectiveFrom
-    ? getDatePart(plan.effectiveFrom)
-    : null;
-
-  const effectiveTo = plan.effectiveTo
-    ? getDatePart(plan.effectiveTo)
-    : null;
-
-  // Invalid published dates should not be silently accepted.
-  if (plan.effectiveFrom && !effectiveFrom) {
-    return false;
-  }
-
-  if (plan.effectiveTo && !effectiveTo) {
-    return false;
-  }
-
-  if (effectiveFrom && effectiveFrom > asOfDate) {
-    return false;
-  }
-
-  if (effectiveTo && effectiveTo < asOfDate) {
-    return false;
-  }
-
-  return true;
-}
-
-/**
- * This function checks if a plan is applicable to the household, based on fuel type, customer type, and distributor.
- */
-export function isPlanApplicable(
-  plan: EnergyPlanDetail,
-  householdDistributors: Set<string>,
-  asOfDate = getLocalDate(),
-): boolean {
-  // Hard-coded eligibility rules for this coding exercise household.
-  if (plan.fuelType !== "ELECTRICITY") {
-    return false;
-  }
-
-  // Hard-coded eligibility rules for this coding exercise household.
-  if (plan.customerType !== "RESIDENTIAL") {
-    return false;
-  }
-
-  if (!isPlanActive(plan, asOfDate)) {
-    return false;
-  }
-
-  const planDistributors =
-    plan.geography?.distributors ?? [];
-
-  return planDistributors.some((distributor) =>
-    householdDistributors.has(
-      normaliseDistributor(distributor),
-    ),
-  );
-}
 
 /**
  * Generic JSON request with CDR version handling.

@@ -43,7 +43,17 @@ fetchPlans()
         ↓ 
 Detailed applicable energy plans 
         ↓ 
-estimatePlanCosts() 
+estimatePlanCosts(input)
+        │
+        ├── map over every plan
+        │
+        ├── check whether the plan applies
+        │
+        ├── calculate annual cost when applicable
+        │
+        ├── return null when it cannot be costed
+        │
+        └── sort valid costs cheapest-first
         ↓
 Retrieve annual cost per plan 
         ↓ 
@@ -82,3 +92,8 @@ I broke down the development process into several key decisions and steps, which
   **8. No HTTP library.** I used the platform `fetch` rather than adding axios. Node 20+ has `fetch` globally, the only things axios would add here are JSON parsing and throwing on non-2xx — about six lines that `fetchJson` already covers — and it would have been the project's first runtime dependency. Using `fetch` also let me test the HTTP layer by stubbing `globalThis.fetch` and asserting on real `Response` objects and headers, rather than mocking a library's internals.
 
 - **Known gaps**: `fetchJson` has no request timeout, so a retailer that accepts a connection and never responds would stall that retailer indefinitely (`fetch` has no default timeout). There is also no retry, so a transient 429 or 503 costs us that retailer's plans for the run. Both are fixable without a new dependency — `AbortSignal.timeout()` and a small backoff loop honouring `Retry-After` — and are the first thing I would add next.
+
+### Development 2: Estimating Plan Costs
+- **Decision**: Implement the `estimatePlanCosts` function to calculate the annual cost of each applicable plan based on the household's electricity usage and the plan's pricing structure.
+- **Rationale**: After fetching the applicable plans, we need to estimate the annual cost for each plan to provide a ranked list of recommendations for the household. This step is crucial for comparing the plans and determining which one offers the best value based on the household's electricity usage.
+- **Implementation**: The function will take the household's electricity usage and the plan's pricing structure as inputs, and calculate the total annual cost by applying the relevant rates and fees. The calculation will consider factors such as fixed charges, usage charges, and any applicable discounts or incentives. The function will return a list of plans with their estimated annual costs, which can then be sorted to provide the final recommendations.
