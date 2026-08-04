@@ -582,9 +582,28 @@ export function calculateAnnualPlanCost(plan: EnergyPlanDetail, usage: RawConsum
 }
 
 /**
+ * Ranking group for one costed plan:
+ *
+ *   0 — applicable and costable
+ *   1 — applicable, but the plan publishes no usable pricing
+ *   2 — not applicable to this household
+ *
+ * A plan we could not cost still ranks above one the household cannot buy,
+ * because the first is a gap in the published data and the second is a
+ * definite "no".
+ */
+function rankGroup(result: RankedPlanCost): number {
+  if (!result.applicable) {
+    return 2;
+  }
+
+  return typeof result.annualCostAud === "number" ? 0 : 1;
+}
+
+/**
  * This function estimates the annual cost of each plan based on the household's electricity usage and the plan's pricing structure.
- * It returns a list of plans with their estimated annual costs, which can then be sorted to provide the final recommendations.
- * 
+ * It returns a list of plans with their estimated annual costs, ranked cheapest-first.
+ *
  * This is the function that will be assessed within the coding exercise.
  * 
  * @param input: EstimateInput object
@@ -595,38 +614,49 @@ export function estimatePlanCosts(input: EstimateInput): RankedPlanCost[] {
   const householdDistributors =
       getHouseholdDistributors(input.servicePoints);
 
-  const results = input.plans.map((plan, index) => {
-    // This is necessary for the contract test because the test directly passes business and out-of-zone plans into estimatePlanCosts().
-    const applicable = isPlanApplicable(
-      plan,
-      householdDistributors,
-      asOfDate,
-    );
+  const results = input.plans.map(
+    (plan, index): EstimatedPlanCost => {
+      /*
+       * Applicability is decided here rather than assumed from fetchPlans,
+       * because callers (including the contract test) can pass in plans
+       * that were never filtered.
+       */
+      const applicable = isPlanApplicable(
+        plan,
+        householdDistributors,
+        asOfDate,
+      );
 
-    // If the plan is not applicable, return null for annualCostAud to indicate that it cannot be costed.
-    if (!applicable) {
       return {
-        planId: plan.planId,
-        planName: plan.displayName,
-        brandName: plan.brandName,
-        applicable: false,
-        annualCostAud: null,
+        planId: plan.planId ?? `unknown-plan-${index + 1}`,
+        planName: plan.displayName ?? "Unnamed plan",
+        brandName: plan.brandName ?? "Unknown brand",
+        applicable,
+        // An inapplicable plan is still reported, just never costed.
+        annualCostAud: applicable
+          ? calculateAnnualPlanCost(plan, input.usage)
+          : null,
       };
+    },
+  );
+
+  /*
+   * Cheapest first within the costable group; the groups themselves order
+   * as described on rankGroup.
+   *
+   * Plans in the same group with no cost compare equal, and sort has been
+   * stable since ES2019, so they keep the order they were supplied in.
+   */
+  results.sort((a, b) => {
+    const byGroup = rankGroup(a) - rankGroup(b);
+
+    if (byGroup !== 0) {
+      return byGroup;
     }
 
-    // If the plan is applicable, calculate the annual cost here based on the household's usage and the plan's pricing structure.
-    const result: EstimatedPlanCost & {
-      originalIndex: number;
-    } = {
-      planId: plan.planId ?? `unknown-plan-${index + 1}`,
-      planName: plan.displayName ?? "Unnamed plan",
-      brandName: plan.brandName ?? "Unknown brand",
-      applicable,
-      annualCostAud: calculateAnnualPlanCost(plan, input.usage),
-      originalIndex: index,
-    };
-
-    return result;
+    return (
+      (a.annualCostAud ?? 0) - (b.annualCostAud ?? 0)
+    );
   });
 
   return results;

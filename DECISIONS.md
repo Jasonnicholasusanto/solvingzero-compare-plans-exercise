@@ -11,7 +11,7 @@ This document is intended to capture the decisions made during the solution and 
 - [✓] Run the verification and test scripts (`npm run verify` and `npm test`) to ensure the development environment is correctly set up and that the existing tests are passing.
 - [✓] Implement the `fetchPlans` function to retrieve plans from the provided retailers, ensuring that the function adheres to the specified filtering criteria and handles pagination and concurrency appropriately.
 - [✓] Implement unit tests for the `fetchPlans` function to validate its correctness and ensure that it handles various scenarios, including edge cases and error conditions.
-- [] Implement the `estimatePlanCosts` function to calculate the annual cost of each applicable plan based on the household's electricity usage and the plan's pricing structure.
+- [✓] Implement the `estimatePlanCosts` function to calculate the annual cost of each applicable plan based on the household's electricity usage and the plan's pricing structure.
 - [] Implement unit tests for the `estimatePlanCosts` function to validate its correctness and ensure that it handles various scenarios, including edge cases and error conditions.
 - [] Integrate the `fetchPlans` and `estimatePlanCosts` functions to provide a complete solution that fetches applicable plans, calculates their costs, and returns a ranked list of recommendations for the household.
 - [] Conduct end-to-end testing of the integrated solution to ensure that it meets the requirements and produces accurate and reliable results.
@@ -180,6 +180,7 @@ I broke down the development process into several key decisions and steps, which
 ### Development 2: Estimating Plan Costs
 - **Decision**: Implement the `estimatePlanCosts` function to calculate the annual cost of each applicable plan based on the household's electricity usage and the plan's pricing structure.
 - **Rationale**: After fetching the applicable plans, we need to estimate the annual cost for each plan to provide a ranked list of recommendations for the household. This step is crucial for comparing the plans and determining which one offers the best value based on the household's electricity usage.
+- **AI Hand-off**: I used AI to generate another estimatePlanCosts.test.ts file. I provided the AI with the requirements and the expected calculations, and it helped me outline the key steps and calculations needed to implement the function correctly. 
 - **Implementation**: The function will take the household's electricity usage and the plan's pricing structure as inputs, and calculate the total annual cost by applying the relevant rates and fees. The calculation will consider factors such as fixed charges, usage charges, and any applicable discounts or incentives. The function will return a list of plans with their estimated annual costs, which can then be sorted to provide the final recommendations. What I need to implement (key calculations and implementations) include:
 
         1. Calculate imported electricity: Sum the positive imported kWh from normal and controlled-load usage records.

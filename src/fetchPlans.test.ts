@@ -10,7 +10,8 @@
 //            wire contract (x-v versions, pagination, URL building) without ever hitting a retailer.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchPlans, isPlanApplicable } from "./fetchPlans.js";
+import { fetchPlans } from "./fetchPlans.js";
+import { isPlanApplicable } from "./utils/helpers.js";
 import type { EnergyPlanDetail, RawServicePoints, Retailer } from "./types.js";
 
 // ───────────────────────── household + plan fixtures ─────────────────────────
