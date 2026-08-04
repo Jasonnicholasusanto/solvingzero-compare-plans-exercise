@@ -1,13 +1,11 @@
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
-/** Shown while the ten retailers' plan catalogues are being fetched and costed. */
 export function RecommendationSkeleton() {
   return (
     <div className="space-y-6" aria-busy="true" aria-live="polite">
       <span className="sr-only">Fetching plans from the ten retailers and costing them on your usage.</span>
 
-      {/* Mirrors the split hero: headline left, detail card right. */}
       <section className="grid items-center gap-10 lg:grid-cols-[1.1fr_1fr] lg:gap-14">
         <div className="space-y-6">
           <Skeleton className="h-5 w-36" />

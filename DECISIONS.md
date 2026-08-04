@@ -25,7 +25,7 @@ This document is intended to capture the decisions made during the solution and 
 ### Nice to have:
 - [] Implement additional features or optimizations, such as caching plan details to reduce API calls, or providing more detailed cost breakdowns for each plan.
 - [✓] Implement the Next.js frontend!
-- [] Refine frontend UI/UX to improve usability and presentation of the plan recommendations and cost comparisons.
+- [✓] Refine frontend UI/UX to improve usability and presentation of the plan recommendations and cost comparisons.
 
 
 ## Pre-development Process
@@ -196,6 +196,62 @@ I broke down the development process into several key decisions and steps, which
 - **Result**: Origin Go Variable at $1,474.30/yr against HomeDeal Smart — Time of Use at $1,269.62/yr: **$204.68/yr saved (13.9%)**, with the current plan ranking 87th of 207 costed plans.
 - **Honesty about coverage**: the output states how much of the market it could not compare — 31 applicable plans excluded, 19 for demand charges and 12 for time-varying feed-in tariffs. A recommendation drawn from 85% of the market without saying so would be worse than one that admits the gap.
 - **What I would do next**: the two cheapest results are the same product with and without controlled load, at the same price. This household has no controlled-load register, so the variant is noise in the list; dropping controlled-load plans when the household has no such usage would tidy it.
+---
+
+## Frontend Development
+
+The engine answers the question; the UI has to make someone act on it. This section covers the tooling decisions taken to get there, and the judgement calls inside the interface itself.
+
+### Restructuring into a monorepo
+
+The exercise ships as a flat library — `src/`, `scripts/`, `user_data/` at the root. Adding a web app to that root would have meant one `package.json` carrying both `vitest` and `next`, and one `tsconfig.json` trying to serve Node ESM and a JSX bundler at once. Those two things want genuinely different compiler settings, so I split them:
+
+```text
+apps/web/          Next.js UI              @solvingzero/web
+packages/core/     the cost engine         @solvingzero/core
+```
+
+The engine moved wholesale into `packages/core` — source, scripts, tests, and its data fixtures (`user_data/`, `retailers.json`) — so the package is self-contained and never reaches outside its own directory for data. `loadData.ts` resolves paths relative to its own module, so the move needed no code change.
+
+**The one constraint I held onto**: `pnpm test`, `pnpm verify` and `pnpm typecheck` still work from the repo root, because that is what the README tells a reviewer to run. They now delegate through Turborepo rather than running Vitest directly.
+
+**Why Turborepo.** With two packages there is a real build order — the web app can't typecheck until the engine has emitted its declarations. Turborepo's `dependsOn: ["^build"]` expresses that once, in `turbo.json`, instead of me remembering to build core first. Caching is a secondary benefit at this size, though `typecheck` and `test` replaying from cache does make the loop noticeably tighter.
+
+**Why the engine is compiled rather than consumed as source.** Turborepo's docs favour "just-in-time" packages that export raw TypeScript, and it is less setup. I built `packages/core` to `dist/` instead, because the engine's imports carry explicit `.js` extensions (Node ESM style) and relying on a bundler to resolve those back to `.ts` is a subtle failure mode I did not want between me and the UI. Compiling also forces the package to declare a real public surface, which is `src/index.ts` — the web app can import `recommendPlan` and cannot reach into `src/utils/helpers.ts`.
+
+### npm → pnpm
+
+The repo started on npm and I moved it to pnpm once the second package existed.
+
+- **Disk and install time.** pnpm's content-addressed store hard-links packages instead of copying them. With Next, React, recharts and shadcn's dependency tree duplicated across two workspaces, that is a meaningful difference on every install.
+- **`workspace:*` is explicit.** `"@solvingzero/core": "workspace:*"` cannot silently resolve to something from the registry. Under npm's `*` it could, if a package of that name ever existed publicly.
+- **Strict `node_modules` by default.** pnpm won't let a package import a dependency it hasn't declared. That caught nothing here, but it is the class of bug that only surfaces in someone else's checkout.
+
+**The cost, honestly**: a reviewer now needs pnpm rather than the npm they already have, and `packageManager` in the root `package.json` pins the version. For a take-home that is a small extra hurdle, and I judged the workspace ergonomics worth it. `corepack enable` is enough to get it.
+
+### Next.js and shadcn/ui
+
+**Next.js** because the goal guide names it, and because the App Router lets the engine run where it already works. `recommendPlan` reads fixtures off disk and calls ten CDR endpoints — that is server work, and a server component calls it directly with no API route in between. The one configuration this needs is `serverExternalPackages: ["@solvingzero/core"]`: bundling the package would rewrite `import.meta.url` and break the on-disk paths its loaders depend on.
+
+**shadcn/ui** because it is copied into the repo rather than installed as a dependency. Every component lands in `components/ui/` as editable source, so restyling `Card` to carry the brand shadow was an edit, not a battle with a library's theming API. Tailwind v4's `@theme` then carries the palette as tokens.
+
+**The costing is slow and that shaped the page.** A cold run is ~25 seconds — 223 plan details across ten retailers. Options were to fetch on every request (unusable), fetch at build time only (stale), or cache. The route uses `export const revalidate = 3600`: rendered once, refreshed hourly in the background, instant for the visitor. Retailers republish pricing far less often than hourly, so the staleness is theoretical. **The trade-off is that `pnpm build` now needs network access and takes ~25 seconds longer**, because the page is prerendered. A `<Suspense>` boundary around the data-dependent subtree keeps the shell instant when the page does render on demand.
+
+### Interface decisions
+
+- **The saving leads.** The primary insight is one number — *"Save $205 a year"* — at the top left, with the working beside it. Everything below exists to justify that number rather than compete with it.
+- **Charts start at zero.** The bar chart comparing today against the best plan, and the ranked bars in the alternatives list, both scale from zero. A truncated axis would turn a 14% difference into a visual chasm; on a page whose job is telling someone how much they would save, that is the line between informing and overselling.
+- **Bar length and bar colour encode different things.** In the alternatives list, length is zero-based against the biggest saving, so it is honest about magnitude. Colour ramps green → amber *relative to this list*, which is what separates plans that sit within a few dollars of each other. The ramp is suppressed entirely when every plan falls within the materiality threshold, so a trivial spread is never dressed up as a meaningful one.
+- **The method is on the page, not in this document.** A "How we cost a plan" card carries the formula and the seven steps as a carousel. A saving figure the household cannot interrogate is one they will not act on.
+- **Brand colours were taken from the source, and corrected.** solvingzero.com publishes its palette as `--chakra-colors-landing-*` tokens; I converted them to oklch rather than eyeballing screenshots. Their signature green `#40ab6d` fails WCAG AA as text (2.89:1), so green *type* uses their own darker `#1f7a44` (5.35:1) while fills keep the brighter green with ink text on top.
+
+### What I would do next
+
+- **`RankedPlanCost.breakdown` is declared but never populated**, so the comparison chart can only plot totals. Threading the per-component figures the engine already computes in `ObservedPlanCost` through `estimatePlanCosts` would allow a stacked usage/supply/solar comparison.
+- **The materiality threshold is duplicated.** `recommendPlan` takes `materialSavingAud` (default 30) as an input but does not publish it on the result, so the UI restates the constant. Exposing it on `PlanRecommendation` would remove the drift risk.
+- **No frontend tests.** The engine has 127; the UI has none. Nothing checks that the methodology copy still matches what `calculateAnnualPlanCost` does — that coupling is prose against code, and it will rot silently.
+- **No loading state is ever seen in production.** Because the route prerenders, the skeleton only appears in development. It is built and correct, but effectively untested by real use.
+
 ---
 
 ## Testing

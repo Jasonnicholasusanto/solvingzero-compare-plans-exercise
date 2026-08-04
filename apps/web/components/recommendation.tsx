@@ -16,16 +16,15 @@ export async function Recommendation() {
     <div className="space-y-6">
       <SavingHeadline recommendation={recommendation} />
 
-      {/* Full width: four columns of figures don't survive being squeezed into half a row. */}
       <Alternatives recommendation={recommendation} />
 
-      {/* Full width: the carousel needs the room to show three steps at a time. */}
-      <Methodology observedDays={recommendation.current.fromUsage.observedDays} />
-
-      <div className="grid items-start gap-6 lg:grid-cols-2">
+      {/* `items-stretch`, not `items-start`: both cards take the taller one's height. */}
+      <div className="grid items-stretch gap-6 lg:grid-cols-2">
         <CurrentSpend current={recommendation.current} />
         <MethodNotes notes={recommendation.notes} excludedPlans={recommendation.excludedPlans} />
       </div>
+
+      <Methodology observedDays={recommendation.current.fromUsage.observedDays} />
     </div>
   );
 }
