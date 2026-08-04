@@ -7,7 +7,7 @@
 
 import { calculateAnnualPlanCost } from "./estimatePlanCosts.js";
 import type { CdrRate, EnergyPlanDetail, RawAccounts, RawBilling, RawConsumption, RawElectricityContract } from "./types.js";
-import { getDatePart, getExportRecords, getLocalDate, getNormalImportRecords, parsePrice } from "./utils/helpers.js";
+import { getDatePart, getExportRecords, getLocalDate, getNormalImportRecords, parsePrice, roundToCents } from "./utils/helpers.js";
 
 /** Spend worked out from meter reads, priced through the plan's published tariffs. */
 export interface UsageBasedSpend {
@@ -401,9 +401,6 @@ function sumKwh(
   );
 }
 
-const round2 = (value: number): number =>
-  Number(value.toFixed(2));
-
 /** Cost meter reads through the plan's published tariffs. */
 function costFromUsage(
   plan: EnergyPlanDetail,
@@ -422,7 +419,7 @@ function costFromUsage(
   for (const [band, cost] of Object.entries(
     observed.usageCostByBandType,
   )) {
-    usageCostByBand[band] = round2(cost);
+    usageCostByBand[band] = roundToCents(cost);
   }
 
   const dates = usage.usage
@@ -436,18 +433,18 @@ function costFromUsage(
 
     peakUsageCost: usageCostByBand.PEAK ?? 0,
     offPeakUsageCost: usageCostByBand.OFF_PEAK ?? 0,
-    supplyCost: round2(observed.supplyCost),
-    solarCredit: round2(observed.solarCredit),
+    supplyCost: roundToCents(observed.supplyCost),
+    solarCredit: roundToCents(observed.solarCredit),
 
     // "Spent so far" is the observed window; annualising it is a separate figure.
-    totalSpentToDate: round2(observed.costAud),
+    totalSpentToDate: roundToCents(observed.costAud),
     estimatedAnnualCost: result.annualCostAud,
 
     usageCostByBand,
-    controlledLoadCost: round2(observed.controlledLoadCost),
+    controlledLoadCost: roundToCents(observed.controlledLoadCost),
 
-    importKwh: round2(sumKwh(getNormalImportRecords(usage), 1)),
-    exportKwh: round2(sumKwh(getExportRecords(usage), -1)),
+    importKwh: roundToCents(sumKwh(getNormalImportRecords(usage), 1)),
+    exportKwh: roundToCents(sumKwh(getExportRecords(usage), -1)),
 
     notes: result.notes,
   };
@@ -581,30 +578,28 @@ function summariseBills(
 
   dates.sort();
 
-  const round = (value: number) => round2(value);
-
-  return {
+    return {
     fromDate: dates[0]!,
     toDate: dates[dates.length - 1]!,
     periods: periodStarts.size,
 
-    peakUsageCost: round(peakUsageCost),
-    offPeakUsageCost: round(offPeakUsageCost),
-    supplyCost: round(supplyCost),
-    solarCredit: round(solarCredit),
+    peakUsageCost: roundToCents(peakUsageCost),
+    offPeakUsageCost: roundToCents(offPeakUsageCost),
+    supplyCost: roundToCents(supplyCost),
+    solarCredit: roundToCents(solarCredit),
 
     energyChargesByLine: Object.fromEntries(
-      Object.entries(energyChargesByLine).map(([k, v]) => [k, round(v)]),
+      Object.entries(energyChargesByLine).map(([k, v]) => [k, roundToCents(v)]),
     ),
-    energyCharges: round(energyCharges),
+    energyCharges: roundToCents(energyCharges),
 
     adjustmentsByLine: Object.fromEntries(
-      Object.entries(adjustmentsByLine).map(([k, v]) => [k, round(v)]),
+      Object.entries(adjustmentsByLine).map(([k, v]) => [k, roundToCents(v)]),
     ),
-    adjustments: round(adjustments),
+    adjustments: roundToCents(adjustments),
 
-    netInvoiced: round(energyCharges + adjustments),
-    paymentsMade: round(paymentsMade),
+    netInvoiced: roundToCents(energyCharges + adjustments),
+    paymentsMade: roundToCents(paymentsMade),
   };
 }
 
@@ -638,7 +633,7 @@ function reconcile(
     { line: "FEED_IN_CREDIT", billed: -bills.solarCredit, computed: -computed.solarCredit },
   ].map((row) => ({
     ...row,
-    differenceAud: round2(row.computed - row.billed),
+    differenceAud: roundToCents(row.computed - row.billed),
   }));
 
   const billedTotal = bills.energyCharges;
@@ -651,11 +646,11 @@ function reconcile(
 
     computedTotal,
     billedTotal,
-    differenceAud: round2(computedTotal - billedTotal),
+    differenceAud: roundToCents(computedTotal - billedTotal),
     differencePercent:
       billedTotal === 0
         ? 0
-        : round2(
+        : roundToCents(
             ((computedTotal - billedTotal) /
               Math.abs(billedTotal)) *
               100,

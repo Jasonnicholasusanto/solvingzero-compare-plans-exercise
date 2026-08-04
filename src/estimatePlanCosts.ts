@@ -541,8 +541,40 @@ function calculateControlledLoadCost(
 }
 
 /**
+ * Whether the plan bills anything on peak demand (kW) rather than energy (kWh).
+ *
+ * CDR publishes demand charges in TWO places, and a plan may use either:
+ *
+ *   - `electricityContract.demandCharges[]`, the obvious one; and
+ *   - a `tariffPeriod` whose `rateBlockUType` is `"demandCharges"`, holding the
+ *     charges inside the period.
+ *
+ * In the recorded snapshot every one of the 19 plans with a demand charge uses the
+ * SECOND form and none use the first, so checking only the obvious field finds
+ * nothing and lets all 19 through — costed on their energy rates alone, which puts
+ * them at the top of a cheapest-first ranking they do not belong at.
+ *
+ * Costing one properly means modelling peak demand per charge period. It is
+ * derivable from 30-minute reads, but it is real work for a charge type that is
+ * rare on residential plans, so these plans are reported as uncostable instead.
+ * For reference, on this household "HomeDeal Now - Demand Single Rate" would carry
+ * roughly $78/year of demand charge that costing it as energy alone omits.
+ */
+function hasDemandCharge(plan: EnergyPlanDetail): boolean {
+  if (plan.electricityContract?.demandCharges?.length) {
+    return true;
+  }
+
+  return (
+    plan.electricityContract?.tariffPeriod ?? []
+  ).some(
+    (period) => period.rateBlockUType === "demandCharges",
+  );
+}
+
+/**
  * This function is the calculation engine, it calculates the annual cost of a given energy plan based on the household's electricity usage.
- * 
+ *
  * i.e. takes into account for single rate and time of use rates calculations.
  *
  * @param plan The energy plan to calculate the cost for.
@@ -550,13 +582,7 @@ function calculateControlledLoadCost(
  * @returns The estimated annual cost in AUD, plus a note whenever it could not be calculated.
  */
 export function calculateAnnualPlanCost(plan: EnergyPlanDetail, usage: RawConsumption): PlanCostResult {
-  /*
-   * Demand charges bill peak kW, not energy. Estimating one needs a demand
-   * model this engine does not have, and ignoring it would quietly understate
-   * the plan — so the plan is reported as uncostable instead of made to look
-   * cheap. No plan in the recorded snapshot carries one.
-   */
-  if (plan.electricityContract?.demandCharges?.length) {
+  if (hasDemandCharge(plan)) {
     return uncostable(
       "Plan includes a demand charge billed on peak demand (kW); this engine costs energy only.",
     );

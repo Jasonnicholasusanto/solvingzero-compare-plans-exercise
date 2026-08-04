@@ -7,7 +7,7 @@ This document is intended to capture the decisions made during the solution and 
 2. Claude Code agent (Anthropic) - Implementing code clean up, code refactoring, and code generation for specific functions and tests.
 3. GitHub Copilot - Providing code suggestions and autocompletion within the IDE.
 
-# Personal Checklist (to-do)
+# Personal Checklist (to-do list)
 - [✓] Read the README.md and GOAL_GUIDE.md to understand the requirements and goals of the exercise.
 - [✓] Review the provided data files (`retailers.json`, `service-points.json`, etc.) to understand the structure and relationships of the data.
 - [✓] Explore the existing codebase, including the stubs in `src/fetchPlans.ts` and `src/estimatePlanCosts.ts`, to understand where to implement the required functionality.
@@ -19,8 +19,8 @@ This document is intended to capture the decisions made during the solution and 
 - [✓] Integrate the `fetchPlans` and `estimatePlanCosts` functions to provide a complete solution that fetches applicable plans, calculates their costs, and returns a ranked list of recommendations for the household.
 - [✓] Implement the `calculateCurrentEnergyCosts` function to calculate the current energy costs for the household based on their existing plan and usage data.
 - [✓] Implement unit tests for the `calculateCurrentEnergyCosts` function to validate its correctness and ensure that it handles various scenarios, including edge cases and error conditions.
-- [] Conduct end-to-end testing of the integrated solution to ensure that it meets the requirements and produces accurate and reliable results.
-- [] Complete the documentation, including updating the README.md and GOAL_GUIDE.md as necessary to reflect the implemented solution and any relevant usage instructions or considerations.
+- [✓] Conduct end-to-end testing of the integrated solution to ensure that it meets the requirements and produces accurate and reliable results. Make sure all tests pass and that the solution handles various scenarios, including edge cases and error conditions.
+- [✓] Complete the documentation, including updating the README.md and GOAL_GUIDE.md as necessary to reflect the implemented solution and any relevant usage instructions or considerations.
 
 ### Nice to have:
 - [] Implement additional features or optimizations, such as caching plan details to reduce API calls, or providing more detailed cost breakdowns for each plan.
@@ -182,3 +182,62 @@ I broke down the development process into several key decisions and steps, which
 - **Decision**: Implement the `calculateCurrentEnergyCosts` function to calculate the current energy costs for the household based on their existing plan and usage data.
 - **Rationale**: This function is necessary to provide a baseline for comparison against the fetched plans. By calculating the current energy costs, we can determine how much the household is currently spending and how much they could potentially save by switching to a different plan. This will help in making informed recommendations for the household. Public holidays are billed at ordinary rates (no holiday calendar), and the plan's conditional fees — disconnection, card processing, paper bill — are excluded deliberately.
 - **Implementation**: The function will take the household's current plan and usage data as inputs, and calculate the total energy costs based on the existing rates and fees. The calculation will consider factors such as fixed charges, usage charges, and any applicable discounts or incentives. The function will return the total current energy costs, which can then be compared against the estimated costs of the fetched plans to provide a comprehensive analysis for the household. The implementation will follow similar steps as the `estimatePlanCosts` function, but will use the current plan's pricing structure instead of the fetched plans.
+
+### Development 4: Recommending a plan — joining the two cost goals
+- **Decision**: Add `recommendPlan`, which sets the household's current annual cost against every plan I can cost and reports the single best switch and what it saves.
+- **Rationale**: The brief asks for the saving *versus what they pay today*, so the two cost goals only answer the question once something joins them. Keeping that join in its own function meant neither cost engine had to know about the other.
+- **Implementation**: The five decisions worth defending:
+  - **Plans are passed in, not fetched.** `recommendPlan` takes an array of plans rather than calling `fetchPlans` itself, so the whole recommendation runs against the recorded snapshot in tests with no network.
+  - **Annual is compared against annual.** Both sides are scaled from the same 318 days of meter reads. Comparing the observed "spent so far" figure against an annual plan cost would have invented about $190 of saving out of nothing but the length of the usage window, so there is a test pinning it.
+  - **No recommendation when nothing beats the current plan.** `recommended` is null rather than the cheapest-available, because the cheapest plan on the market is not advice if the household is already on it.
+  - **Rank is derived from cost, not by lookup.** The current plan's position comes from counting plans cheaper than it, rather than finding it in the CDR feed — the household's own retailer may not publish it.
+  - **A materiality floor of $30/year.** Below that the saving is reported with a note that it is closer to break-even. The costing reconciles to 0.57% against their invoices, but the usage window omits deep winter, so presenting a $12 difference as a reason to switch would overclaim.
+- **Result**: Origin Go Variable at $1,474.30/yr against HomeDeal Smart — Time of Use at $1,269.62/yr: **$204.68/yr saved (13.9%)**, with the current plan ranking 87th of 207 costed plans.
+- **Honesty about coverage**: the output states how much of the market it could not compare — 31 applicable plans excluded, 19 for demand charges and 12 for time-varying feed-in tariffs. A recommendation drawn from 85% of the market without saying so would be worse than one that admits the gap.
+- **What I would do next**: the two cheapest results are the same product with and without controlled load, at the same price. This household has no controlled-load register, so the variant is noise in the list; dropping controlled-load plans when the household has no such usage would tidy it.
+---
+
+## Testing
+
+`npm test` — **127 tests across 5 files, all passing.** `npm run typecheck` is clean.
+
+| File | Tests | What it covers |
+| --- | ---: | --- |
+| `src/estimatePlanCosts.test.ts` | 8 | The supplied contract test, unmodified — GST, solar credit, midnight-wrapping time-of-use, ranking. |
+| `src/estimatePlanCosts.extra.test.ts` | 38 | My own cost-engine tests: controlled load, tiered blocks, annualisation, robustness, and the recorded snapshot. |
+| `src/fetchPlans.test.ts` | 26 | Eligibility filtering, and the CDR wire contract against a stubbed `fetch`. |
+| `src/calculateCurrentEnergyCosts.test.ts` | 40 | Plan selection, the snake_case adapter, spend figures, and reconciliation against the real invoices. |
+| `src/recommendPlan.test.ts` | 15 | Saving arithmetic, ranking, materiality, and the real household against all 249 snapshot plans. |
+
+### How I approached testing
+
+**I separated the pure logic from the I/O so the risky parts need no mocking.** `isPlanApplicable`, `priceTieredUsage` and `toCdrTime` are pure functions tested directly against hand-built inputs. Only `fetchPlans` needs a stub, and that stubs `globalThis.fetch` with a small fake CDR server rather than mocking a library — so the tests assert on real `Response` objects, real status codes and the real `x-v` headers.
+
+**Expected figures are hand-computed from `DATA_DICTIONARY.md`, never read back off my own implementation.** A test whose expected value came from running the code only proves the code has not changed, not that it is right. Every cost fixture in `estimatePlanCosts.extra.test.ts` carries the arithmetic in a comment above it.
+
+**Dates never depend on the clock.** Every eligibility test passes an explicit `asOfDate`, so nothing turns red when the calendar moves.
+
+**I mutation-checked the tests that matter.** After writing the `fetchPlans` suite I deliberately broke the source four ways — removed the de-duplication `Set`, sent the wrong `x-v` version, ignored `meta.totalPages`, and re-threw instead of skipping a failed plan — and confirmed each one failed exactly the test aimed at it, then restored the file. I did the same when extending the demand-charge guard. A stub-driven suite can pass for the wrong reasons, and this is the cheapest way to find out that it does.
+
+### Two tests doing unusual work
+
+**Reconciliation against the real invoices.** `bills.json` breaks down into the same four components I compute, so I cost the usage over exactly the window the retailer billed and compare line by line:
+
+| Line | Billed | Computed | Difference |
+| --- | ---: | ---: | ---: |
+| PEAK | $331.88 | $347.23 | +4.6% |
+| OFF_PEAK | $440.91 | $431.60 | −2.1% |
+| DAILY_SUPPLY | $339.43 | $339.45 | 0.0% |
+| FEED_IN_CREDIT | −$47.28 | −$47.28 | 0.0% |
+| **Total** | **$1,064.94** | **$1,071.00** | **+0.57%** |
+
+Supply and feed-in match to the cent. Peak and off-peak each differ by a few percent but their sum agrees to 0.78% and the total kWh is identical — the boundary moves, not the energy, because the retailer applies the published `+10:00` windows while I read local wall-clock, which shifts an hour across daylight saving. The test asserts that direction explicitly, not just that the totals are close, so a change in window handling would say which way it moved.
+
+**Tests against the 249-plan recorded snapshot.** The synthetic fixtures pin the rules; the snapshot pins them against shapes real retailers actually publish. This is what caught the demand-charge bug: my first guard checked `electricityContract.demandCharges`, which no real plan populates, while all 19 plans that carry a demand charge express it as a `tariffPeriod` with `rateBlockUType: "demandCharges"`. A purely synthetic suite would still be passing and the ranking would still be wrong at the top.
+
+### What is not covered
+
+- **No live network test.** `fetchPlans` is tested against a stub; nothing exercises the real retailer endpoints in CI. That is deliberate — the tests stay fast and offline — but it means a change to a retailer's response shape would not be caught here.
+- **No test for the request timeout and retry**, because neither is implemented yet (see the known gaps under Development 1).
+- **Seasonal tariff periods are untested** because they are unhandled: only `tariffPeriod[0]` is read, so a plan with summer and winter energy rates is costed entirely at the first season's prices. 19 snapshot plans have multiple periods, and all 19 are already excluded for carrying demand charges — so this does not currently affect any costed plan, but it would if a retailer published seasonal rates without a demand charge.
+- **Public holidays** are billed at ordinary rates; there is no holiday calendar to test against.
