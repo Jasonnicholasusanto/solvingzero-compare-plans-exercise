@@ -245,7 +245,12 @@ export function getControlledLoadRecords(
   );
 }
 
-/** 
+/** Round a money value to whole cents for presentation. */
+export function roundToCents(value: number): number {
+  return Number(value.toFixed(2));
+}
+
+/**
  * Parse a price string into a number, throwing an error if the value is missing or invalid.
  */
 export function parsePrice(value: string | number | undefined | null): number | null {
