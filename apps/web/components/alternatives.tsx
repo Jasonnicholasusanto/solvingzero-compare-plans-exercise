@@ -35,7 +35,7 @@ export function Alternatives({ recommendation }: { recommendation: PlanRecommend
                 <TableHead>Plan</TableHead>
                 <TableHead>Retailer</TableHead>
                 <TableHead className="text-right">Per year</TableHead>
-                <TableHead className="text-right">vs today</TableHead>
+                <TableHead className="text-right">Potential savings</TableHead>
               </TableRow>
             </TableHeader>
 
