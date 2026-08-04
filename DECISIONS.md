@@ -4,6 +4,18 @@
 
 This document is intended to capture the decisions made during the solution and development process. It serves as a reference for the team and stakeholders to understand the rationale behind key choices, ensuring transparency and facilitating future decision-making.
 
+# Personal Checklist (to-do)
+- [✓] Read the README.md and GOAL_GUIDE.md to understand the requirements and goals of the exercise.
+- [✓] Review the provided data files (`retailers.json`, `service-points.json`, etc.) to understand the structure and relationships of the data.
+- [✓] Explore the existing codebase, including the stubs in `src/fetchPlans.ts` and `src/estimatePlanCosts.ts`, to understand where to implement the required functionality.
+- [✓] Run the verification and test scripts (`npm run verify` and `npm test`) to ensure the development environment is correctly set up and that the existing tests are passing.
+- [✓] Implement the `fetchPlans` function to retrieve plans from the provided retailers, ensuring that the function adheres to the specified filtering criteria and handles pagination and concurrency appropriately.
+- [✓] Implement unit tests for the `fetchPlans` function to validate its correctness and ensure that it handles various scenarios, including edge cases and error conditions.
+- [] Implement the `estimatePlanCosts` function to calculate the annual cost of each applicable plan based on the household's electricity usage and the plan's pricing structure.
+- [] Implement unit tests for the `estimatePlanCosts` function to validate its correctness and ensure that it handles various scenarios, including edge cases and error conditions.
+- [] Integrate the `fetchPlans` and `estimatePlanCosts` functions to provide a complete solution that fetches applicable plans, calculates their costs, and returns a ranked list of recommendations for the household.
+
+
 ## Pre-development Process
 
 ### These were my steps taken before starting the development process:
