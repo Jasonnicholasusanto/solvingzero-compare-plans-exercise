@@ -1,4 +1,4 @@
-import { EnergyPlanDetail, RawConsumption, RawServicePoints } from "../types";
+import { DAY_CODES, EnergyPlanDetail, RawConsumption, RawServicePoints } from "../types";
 
 
 /**
@@ -258,4 +258,48 @@ export function parseTimeToMinutes(value: string): number | null {
   }
 
   return hours * 60 + minutes;
+}
+
+/**
+ * Determine whether an interval starts inside a tariff window.
+ *
+ * Normal window:
+ * 07:00 -> 21:00
+ *
+ * Midnight-wrapping window:
+ * 21:00 -> 07:00
+ */
+export function isTimeInWindow(
+  intervalMinutes: number,
+  startMinutes: number,
+  endMinutes: number,
+): boolean {
+  if (startMinutes === endMinutes) {
+    return true;
+  }
+
+  if (startMinutes < endMinutes) {
+    return (
+      intervalMinutes >= startMinutes &&
+      intervalMinutes < endMinutes
+    );
+  }
+
+  return (
+    intervalMinutes >= startMinutes ||
+    intervalMinutes < endMinutes
+  );
+}
+
+/**
+ * Convert a YYYY-MM-DD date into a CDR day code.
+ */
+export function getDayCode(date: string): string | null {
+  const parsed = new Date(`${date}T00:00:00Z`);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return DAY_CODES[parsed.getUTCDay()] ?? null;
 }

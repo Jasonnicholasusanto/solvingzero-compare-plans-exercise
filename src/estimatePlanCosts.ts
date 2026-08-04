@@ -12,7 +12,7 @@ import {
   GST_MULTIPLIER,
   DAYS_PER_YEAR,
 } from "./types.js";
-import { getExportRecords, getHouseholdDistributors, getImportRecords, getLocalDate, isPlanApplicable, parsePrice } from "./utils/helpers.js";
+import { getDayCode, getExportRecords, getHouseholdDistributors, getImportRecords, getLocalDate, isPlanApplicable, isTimeInWindow, parsePrice, parseTimeToMinutes } from "./utils/helpers.js";
 
 export interface EstimateInput {
   usage: RawConsumption;
@@ -87,6 +87,123 @@ function calculateExportedKwh(usage: RawConsumption): number {
 }
 
 /**
+ * Find the applicable TOU unit price for one interval.
+ */
+function findTimeOfUsePrice(
+  plan: EnergyPlanDetail,
+  date: string,
+  intervalMinutes: number,
+): number | null {
+  const tariffPeriod = plan.electricityContract?.tariffPeriod?.[0];
+  const timeOfUseRates = tariffPeriod?.timeOfUseRates ?? [];
+  const dayCode = getDayCode(date);
+
+  if (!dayCode) {
+    return null;
+  }
+
+  for (const timeOfUseRate of timeOfUseRates) {
+    const unitPrice = parsePrice(
+      timeOfUseRate.rates?.[0]?.unitPrice,
+    );
+
+    if (unitPrice === null) {
+      continue;
+    }
+
+    for (const window of timeOfUseRate.timeOfUse ?? []) {
+      const days = window.days ?? [];
+
+      if (!days.includes(dayCode)) {
+        continue;
+      }
+
+      const startMinutes = parseTimeToMinutes(window.startTime);
+      const endMinutes = parseTimeToMinutes(window.endTime);
+
+      if (startMinutes === null || endMinutes === null) {
+        continue;
+      }
+
+      if (
+        isTimeInWindow(
+          intervalMinutes,
+          startMinutes,
+          endMinutes,
+        )
+      ) {
+        return unitPrice;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * This function calculates the time-of-use rate usage cost for a given energy plan based on the household's electricity usage.
+ * 
+ * Formula: Annual cost = (Σ each interval's imported kWh × matching TOU rate + days × daily supply charge) × 1.1 − (Total exported kWh × feed-in tariff)
+ * 
+ * @param plan The energy plan to calculate the usage cost for.
+ * @param usage The household's electricity usage data.
+ * @returns The estimated usage cost for the time-of-use plan, or null if it cannot be calculated.
+ */
+function calculateTimeOfUseUsageCost(
+  plan: EnergyPlanDetail,
+  usage: RawConsumption,
+): number | null {
+  let totalCost = 0;
+
+  for (const record of getImportRecords(usage)) {
+    const intervalLength =
+      record.interval_read.read_interval_length;
+
+    if (
+      !Number.isFinite(intervalLength) ||
+      intervalLength <= 0
+    ) {
+      return null;
+    }
+
+    for (
+      let index = 0;
+      index < record.interval_read.interval_reads.length;
+      index += 1
+    ) {
+      const intervalKwh =
+        record.interval_read.interval_reads[index] ?? 0;
+
+      const importedKwh = Math.max(0, intervalKwh);
+
+      if (importedKwh === 0) {
+        continue;
+      }
+
+      const intervalMinutes = index * intervalLength;
+
+      const unitPrice = findTimeOfUsePrice(
+        plan,
+        record.read_start_date,
+        intervalMinutes,
+      );
+
+      /*
+       * If an imported interval cannot be matched to a published
+       * tariff window, the plan cannot be costed reliably.
+       */
+      if (unitPrice === null) {
+        return null;
+      }
+
+      totalCost += importedKwh * unitPrice;
+    }
+  }
+
+  return totalCost;
+}
+
+/**
  * This function calculates the single rate usage cost for a given energy plan based on the household's electricity usage.
  * 
  * Formula: Annual cost = ((Total imported kWh × single rate) + (days × daily supply charge)) × 1.1 − (Total exported kWh × feed-in tariff)
@@ -145,8 +262,6 @@ export function calculateAnnualPlanCost(plan: EnergyPlanDetail, usage: RawConsum
     tariffPeriod.dailySupplyCharge,
   );
 
-  console.log(`Calculating annual cost for plan ${plan.planId} with ${observedDays} observed days. Daily supply charge: ${dailySupplyCharge}`);
-
   if (dailySupplyCharge === null) {
     return null;
   }
@@ -158,6 +273,13 @@ export function calculateAnnualPlanCost(plan: EnergyPlanDetail, usage: RawConsum
   switch (tariffPeriod.rateBlockUType) {
     case "singleRate":
       usageCostBeforeGst = calculateSingleRateUsageCost(
+        plan,
+        usage,
+      );
+      break;
+
+    case "timeOfUseRates":
+      usageCostBeforeGst = calculateTimeOfUseUsageCost(
         plan,
         usage,
       );
