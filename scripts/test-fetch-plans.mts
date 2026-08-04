@@ -17,3 +17,11 @@ console.log(
   `Fetched ${plans.length} plans for ${servicePoints.service_points.length} service points`,
 );
 
+for (const plan of plans) {
+  console.log(
+    `Plan ${plan.planId} (${plan.displayName}) from ${plan.brandName} — ${
+      plan.electricityContract?.tariffPeriod?.[0]?.rateBlockUType ?? "unknown"
+    }`,
+  );
+}
+
