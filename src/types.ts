@@ -207,3 +207,31 @@ export interface RankedPlanCost {
   breakdown?: { usageCost?: number; supplyCost?: number; solarCredit?: number; [k: string]: number | undefined };
   notes?: string[];
 }
+
+// ========================= Additional typings / constants =======================
+
+interface PlanSummary {
+  planId?: string;
+}
+
+export interface ListPlansResponse {
+  data?: {
+    plans?: PlanSummary[];
+  };
+  meta?: {
+    totalRecords?: number;
+    totalPages?: number;
+  };
+}
+
+export interface PlanDetailResponse {
+  data?: EnergyPlanDetail;
+}
+
+export const FUEL_TYPES_PARAMS = ['ELECTRICITY', 'GAS', 'DUAL', 'ALL'] as const;
+
+export const EFFECTIVE_PARAMS = ['CURRENT', 'FUTURE', 'ALL'] as const;
+
+export const TYPES_PARAMS = ['STANDING', 'MARKET', 'REGULATED', 'ALL'] as const;
+
+export const DETAIL_CONCURRENCY = 5; // how many plan detail requests to run in parallel
