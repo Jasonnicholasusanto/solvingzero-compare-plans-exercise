@@ -2,7 +2,10 @@
 
 # Solution & Development Decision Log
 
-This document is intended to capture the decisions made during the solution and development process. It serves as a reference for the team and stakeholders to understand the rationale behind key choices, ensuring transparency and facilitating future decision-making.
+This document is intended to capture the decisions made during the solution and development process. It serves as a reference for the team and stakeholders to understand the rationale behind key choices, ensuring transparency and facilitating future decision-making. To be completely honest, I have been using AI to assist me in the development process, and I have been documenting the decisions made during the development process. AI tools that I have utilized include:
+1. ChatGPT (OpenAI) - Providing contextual understanding, code breakdown, code suggestions, research the web, and explanations for business logic.
+2. Claude Code agent (Anthropic) - Implementing code clean up, code refactoring, and code generation for specific functions and tests.
+3. GitHub Copilot - Providing code suggestions and autocompletion within the IDE.
 
 # Personal Checklist (to-do)
 - [✓] Read the README.md and GOAL_GUIDE.md to understand the requirements and goals of the exercise.
@@ -13,7 +16,9 @@ This document is intended to capture the decisions made during the solution and 
 - [✓] Implement unit tests for the `fetchPlans` function to validate its correctness and ensure that it handles various scenarios, including edge cases and error conditions.
 - [✓] Implement the `estimatePlanCosts` function to calculate the annual cost of each applicable plan based on the household's electricity usage and the plan's pricing structure.
 - [✓] Implement unit tests for the `estimatePlanCosts` function to validate its correctness and ensure that it handles various scenarios, including edge cases and error conditions.
-- [] Integrate the `fetchPlans` and `estimatePlanCosts` functions to provide a complete solution that fetches applicable plans, calculates their costs, and returns a ranked list of recommendations for the household.
+- [✓] Integrate the `fetchPlans` and `estimatePlanCosts` functions to provide a complete solution that fetches applicable plans, calculates their costs, and returns a ranked list of recommendations for the household.
+- [✓] Implement the `calculateCurrentEnergyCosts` function to calculate the current energy costs for the household based on their existing plan and usage data.
+- [✓] Implement unit tests for the `calculateCurrentEnergyCosts` function to validate its correctness and ensure that it handles various scenarios, including edge cases and error conditions.
 - [] Conduct end-to-end testing of the integrated solution to ensure that it meets the requirements and produces accurate and reliable results.
 - [] Complete the documentation, including updating the README.md and GOAL_GUIDE.md as necessary to reflect the implemented solution and any relevant usage instructions or considerations.
 
@@ -77,47 +82,19 @@ estimatePlanCosts(input)
         │       └── If applicable
         │               │
         │               ▼
-        │       calculateAnnualPlanCost(plan, usage)
-        │               │
-        │               ├── Calculate normal usage cost
-        │               │       │
-        │               │       ├── singleRate
-        │               │       │       └── total normal-import kWh
-        │               │       │           × unit price
-        │               │       │
-        │               │       └── timeOfUseRates
-        │               │               └── each normal-import interval
-        │               │                   × matching TOU price
-        │               │
-        │               ├── Calculate controlled-load cost
-        │               │       │
-        │               │       ├── No controlled-load records
-        │               │       │       └── controlled-load cost = 0
-        │               │       │
-        │               │       ├── singleRate
-        │               │       │       └── total controlled-load kWh
-        │               │       │           × controlled-load unit price
-        │               │       │
-        │               │       └── timeOfUseRates
-        │               │               └── each controlled-load interval
-        │               │                   × matching controlled-load TOU price
-        │               │
-        │               ├── Add supply charges
-        │               │       ├── main daily supply charge
-        │               │       └── controlled-load daily supply charge
-        │               │
-        │               ├── Apply GST
-        │               │       └── (usage + controlled load + supply) × 1.1
-        │               │
-        │               ├── Calculate solar feed-in credit
-        │               │       ├── single feed-in tariff, or
-        │               │       └── time-varying feed-in tariff
-        │               │
-        │               ├── Subtract solar credit
-        │               │
-        │               ├── Annualise to 365 days
-        │               │
-        │               └── Return null if pricing is incomplete
+        │       calculateAnnualPlanCost()
+        │                 │
+        │                 ├── Reject demand-charge plans
+        │                 ├── Validate tariff and supply charge
+        │                 ├── Count observed days
+        │                 ├── Calculate normal usage cost
+        │                 │     ├── Single-rate
+        │                 │     └── Time-of-use
+        │                 ├── Calculate controlled-load cost
+        │                 ├── Calculate solar credit
+        │                 ├── Add GST
+        │                 ├── Subtract solar credit
+        │                 └── Annualise the result
         │
         ├── Return one result per plan
         │
@@ -136,14 +113,17 @@ Return ranked plan recommendations
 ### Annual Cost Formula
 
 ```text
+Observed cost =
+  (
+    normal import usage cost
+    + controlled-load cost
+    + daily supply cost
+  )
+  × GST
+  − solar feed-in credit
+
 Annual cost =
-(
-  normal usage cost
-  + controlled-load usage cost
-  + main supply charges
-  + controlled-load supply charges
-) × 1.1
-− solar feed-in credit
+  observed cost × 365 / observed days
 ```
 
 ## Development Process & Decisions
@@ -197,3 +177,8 @@ I broke down the development process into several key decisions and steps, which
         9. Handle missing pricing safely: Return annualCostAud: null when a plan cannot be reliably costed, rather than returning zero or throwing an error.
         10. Return all plan results: Return one identified result for every supplied plan, including applicable and inapplicable plans.
         11. Rank the plans: Sort applicable plans with numeric annual costs from cheapest to most expensive.
+
+### Development 3: Calculating Current Energy Costs
+- **Decision**: Implement the `calculateCurrentEnergyCosts` function to calculate the current energy costs for the household based on their existing plan and usage data.
+- **Rationale**: This function is necessary to provide a baseline for comparison against the fetched plans. By calculating the current energy costs, we can determine how much the household is currently spending and how much they could potentially save by switching to a different plan. This will help in making informed recommendations for the household. Public holidays are billed at ordinary rates (no holiday calendar), and the plan's conditional fees — disconnection, card processing, paper bill — are excluded deliberately.
+- **Implementation**: The function will take the household's current plan and usage data as inputs, and calculate the total energy costs based on the existing rates and fees. The calculation will consider factors such as fixed charges, usage charges, and any applicable discounts or incentives. The function will return the total current energy costs, which can then be compared against the estimated costs of the fetched plans to provide a comprehensive analysis for the household. The implementation will follow similar steps as the `estimatePlanCosts` function, but will use the current plan's pricing structure instead of the fetched plans.
