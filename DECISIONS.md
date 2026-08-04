@@ -14,6 +14,12 @@ This document is intended to capture the decisions made during the solution and 
 - [] Implement the `estimatePlanCosts` function to calculate the annual cost of each applicable plan based on the household's electricity usage and the plan's pricing structure.
 - [] Implement unit tests for the `estimatePlanCosts` function to validate its correctness and ensure that it handles various scenarios, including edge cases and error conditions.
 - [] Integrate the `fetchPlans` and `estimatePlanCosts` functions to provide a complete solution that fetches applicable plans, calculates their costs, and returns a ranked list of recommendations for the household.
+- [] Conduct end-to-end testing of the integrated solution to ensure that it meets the requirements and produces accurate and reliable results.
+- [] Complete the documentation, including updating the README.md and GOAL_GUIDE.md as necessary to reflect the implemented solution and any relevant usage instructions or considerations.
+
+### Nice to have:
+- [] Implement additional features or optimizations, such as caching plan details to reduce API calls, or providing more detailed cost breakdowns for each plan.
+- [] Implement the Next.js frontend!
 
 
 ## Pre-development Process
