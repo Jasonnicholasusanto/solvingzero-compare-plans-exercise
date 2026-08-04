@@ -35,19 +35,34 @@ export default function Home() {
             priority
           />
         </div>
-        <SplitText
-          text="Choosing the best choice for you"
-          tag="h1"
-          textAlign="left"
-          className="text-sm tracking-tight"
-          splitType="chars"
-          delay={20}
-          duration={0.6}
-          from={{ opacity: 0, y: "0.6em" }}
-          to={{ opacity: 1, y: 0 }}
-          threshold={0.05}
-          rootMargin="0px"
-        />
+        <div className="flex flex-col items-start gap-1 sm:items-end">
+          <SplitText
+            text="Ready when you are."
+            tag="h1"
+            textAlign="left"
+            className="text-sm font-semibold tracking-tight"
+            splitType="chars"
+            delay={20}
+            duration={0.6}
+            from={{ opacity: 0, y: "0.6em" }}
+            to={{ opacity: 1, y: 0 }}
+            threshold={0.05}
+            rootMargin="0px"
+          />
+          <SplitText
+            text="Let&apos;s start solving"
+            tag="h1"
+            textAlign="left"
+            className="text-sm font-semibold tracking-tight text-primary-strong"
+            splitType="chars"
+            delay={20}
+            duration={0.6}
+            from={{ opacity: 0, y: "0.6em" }}
+            to={{ opacity: 1, y: 0 }}
+            threshold={0.05}
+            rootMargin="0px"
+          />
+        </div>
       </header>
 
       <Suspense fallback={<RecommendationSkeleton />}>
