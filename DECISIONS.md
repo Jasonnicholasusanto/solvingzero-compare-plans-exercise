@@ -24,7 +24,8 @@ This document is intended to capture the decisions made during the solution and 
 
 ### Nice to have:
 - [] Implement additional features or optimizations, such as caching plan details to reduce API calls, or providing more detailed cost breakdowns for each plan.
-- [] Implement the Next.js frontend!
+- [✓] Implement the Next.js frontend!
+- [] Refine frontend UI/UX to improve usability and presentation of the plan recommendations and cost comparisons.
 
 
 ## Pre-development Process
